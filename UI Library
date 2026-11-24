@@ -11,9 +11,9 @@
 		local NexCat = require(path.to.NexCat)                -- Roblox Studio (ModuleScript)
 
 		local Window = NexCat:CreateWindow({
-			Title = "NexCat",
+			Title = "NexCat", -- don't change!
 			Author = "by kamu",
-			Folder = "NexCat",
+			Folder = "NexCat", -- don't change!
 			Topbar = { Height = 52, ButtonsType = "Default" }, -- atau "Mac"
 		})
 		local Tab = Window:Tab({ Title = "Main", Icon = "home" })
