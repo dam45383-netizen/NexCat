@@ -13,7 +13,7 @@
 		local Window = NexCat:CreateWindow({
 			Title = "NexCat",
 			Author = "by kamu",
-			Folder = "nexcat",
+			Folder = "NexCat",
 			Topbar = { Height = 52, ButtonsType = "Default" }, -- atau "Mac"
 		})
 		local Tab = Window:Tab({ Title = "Main", Icon = "home" })
@@ -22,6 +22,12 @@
 	Icon logo kucing disimpan sebagai base64 di bawah (LOGO_BASE64). Di executor yang punya
 	writefile + getcustomasset, logo otomatis ditulis jadi PNG lalu dipakai sebagai gambar.
 	Kalau tidak tersedia (misal Roblox Studio), otomatis pakai emoji sebagai cadangan.
+
+	Config (folder NexCat, file "<Nama Game> Config.lua"):
+		Element yang mau disimpan harus punya Flag, contoh: Tab:Toggle({ Title = "Auto Farm", Flag = "AutoFarm" })
+		Window:SaveConfig() / Window:LoadConfig() / Window:DeleteConfig() / Window:GetConfigPath()
+		Tab:ConfigSection() -> tombol Save / Load / Delete + toggle Auto Save siap pakai
+		CreateWindow({ AutoLoad = true (default), AutoSave = false, AutoSaveInterval = 5, GameName = "Nama Game" })
 ]]
 
 local Players = game:GetService("Players")
@@ -66,7 +72,75 @@ ConfigClass.__index = ConfigClass
 -- ============================================================
 
 local LOGO_BASE64 = [[
-__LOGO_B64__
+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
 ]]
 
 -- ============================================================
@@ -964,6 +1038,104 @@ local function Decode(value)
 	return value
 end
 
+local function SameValue(a, b)
+	if a == b then
+		return true
+	end
+	if type(a) == "table" and type(b) == "table" then
+		for key, value in pairs(a) do
+			if not SameValue(value, b[key]) then
+				return false
+			end
+		end
+		for key in pairs(b) do
+			if a[key] == nil then
+				return false
+			end
+		end
+		return true
+	end
+	return false
+end
+
+-- terapkan satu nilai ke element. return true kalau element-nya ada.
+-- kalau nilainya sudah sama, Set dilewati supaya Callback tidak jalan dua kali.
+local function ApplyValue(element, raw)
+	if not element or type(element.Set) ~= "function" then
+		return false
+	end
+	if type(element.Get) == "function" then
+		local ok, current = pcall(element.Get, element)
+		if ok and SameValue(Encode(current), raw) then
+			return true
+		end
+	end
+	pcall(element.Set, element, Decode(raw))
+	return true
+end
+
+-- ---------- Nama game -> nama file ----------
+-- File config: <Folder>/<Nama Game> Config.lua   (Folder default "NexCat")
+local ConfigFileSuffix = " Config.lua"
+local GameNameOverride, GameNameCache
+
+-- buang tag event [UPDATE], emoji / karakter non-ASCII, dan karakter terlarang di nama file,
+-- supaya nama file tetap sama walau judul game berganti tag event.
+local function CleanFileName(name)
+	name = tostring(name or "")
+	name = name:gsub("%b[]", " ")
+	name = name:gsub("[\128-\255]", "")
+	name = name:gsub('[\\/:*?"<>|%c]', "")
+	name = name:gsub("%s+", " ")
+	name = name:match("^[%s%.%-_]*(.-)[%s%.]*$") or ""
+	return name:sub(1, 60)
+end
+
+local function GetGameName()
+	if GameNameOverride then
+		return GameNameOverride
+	end
+	if GameNameCache then
+		return GameNameCache
+	end
+	local name
+	local ok = pcall(function()
+		name = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name
+	end)
+	if not ok or type(name) ~= "string" or CleanFileName(name) == "" then
+		pcall(function()
+			name = game.Name
+		end)
+	end
+	name = CleanFileName(name)
+	if name == "" then
+		name = "Place " .. tostring(game.PlaceId)
+	end
+	GameNameCache = name
+	return name
+end
+
+-- ganti nama game yang dipakai untuk nama file (nil = otomatis dari Roblox)
+function NexCat:SetGameName(name)
+	local clean = CleanFileName(name)
+	GameNameOverride = clean ~= "" and clean or nil
+end
+
+function NexCat:GetGameName()
+	return GetGameName()
+end
+
+-- ambil nama game lebih awal supaya Save/Load tidak perlu menunggu
+task.spawn(GetGameName)
+
+local function ParentFolder(path)
+	return tostring(path):match("^(.*)[/\\][^/\\]*$")
+end
+
+local function GameConfigPath(window)
+	return window.Folder .. "/" .. GetGameName() .. ConfigFileSuffix
+end
+
 function ConfigClass:Register(flag, element)
 	self._extra[flag] = element
 	return element
@@ -984,13 +1156,30 @@ function ConfigClass:_Collect()
 	return data
 end
 
-function ConfigClass:_Apply(data)
+-- consume = true -> flag yang ketemu dihapus dari data (dipakai untuk auto load)
+-- return: jumlah flag yang ketemu di UI
+function ConfigClass:_Apply(data, consume)
+	local matched = 0
 	for flag, raw in pairs(data) do
 		local element = self._extra[flag] or self.Window.Flags[flag]
-		if element and element.Set then
-			pcall(element.Set, element, Decode(raw))
+		if ApplyValue(element, raw) then
+			matched = matched + 1
+			if consume then
+				data[flag] = nil
+			end
 		end
 	end
+	return matched
+end
+
+function ConfigClass:GetPath()
+	if self.PathResolver then
+		local ok, path = pcall(self.PathResolver)
+		if ok and type(path) == "string" then
+			return path
+		end
+	end
+	return self.Path
 end
 
 -- Export/Import jalan di mana saja (termasuk Studio), Save/Load butuh filesystem executor
@@ -1005,16 +1194,44 @@ function ConfigClass:Import(json)
 	if not ok or type(data) ~= "table" then
 		return false, "JSON tidak valid"
 	end
-	self:_Apply(data)
-	return true
+	local matched = self:_Apply(data)
+	self._lastCollected = self:_Collect()
+	return true, matched
 end
 
 function ConfigClass:Save()
 	if not FSAvailable() then
 		return false, "Filesystem tidak tersedia di environment ini"
 	end
-	EnsureFolder(self.Manager.Path)
-	local ok, err = pcall(writefile, self.Path, self:Export())
+	local path = self:GetPath()
+	EnsureFolder(ParentFolder(path) or self.Manager.Path)
+	local collected = self:_Collect()
+	local data = collected
+	-- gabung dengan isi file lama supaya flag yang belum dibuat (atau sudah dihapus) tidak hilang
+	if self.KeepUnknown and isfile(path) then
+		local okRead, old = pcall(function()
+			return HttpService:JSONDecode(readfile(path))
+		end)
+		if okRead and type(old) == "table" then
+			data = {}
+			for flag, value in pairs(old) do
+				data[flag] = value
+			end
+			for flag, value in pairs(collected) do
+				data[flag] = value
+			end
+		end
+	end
+	local okEncode, json = pcall(function()
+		return HttpService:JSONEncode(data)
+	end)
+	if not okEncode then
+		return false, json
+	end
+	local ok, err = pcall(writefile, path, json)
+	if ok then
+		self._lastCollected = collected
+	end
 	return ok, err
 end
 
@@ -1022,10 +1239,11 @@ function ConfigClass:Load()
 	if not FSAvailable() then
 		return false, "Filesystem tidak tersedia di environment ini"
 	end
-	if not isfile(self.Path) then
+	local path = self:GetPath()
+	if not isfile(path) then
 		return false, "File config belum ada"
 	end
-	local ok, content = pcall(readfile, self.Path)
+	local ok, content = pcall(readfile, path)
 	if not ok then
 		return false, content
 	end
@@ -1033,8 +1251,10 @@ function ConfigClass:Load()
 end
 
 function ConfigClass:Delete()
-	if FSAvailable() and type(delfile) == "function" and isfile(self.Path) then
-		pcall(delfile, self.Path)
+	local path = self:GetPath()
+	if FSAvailable() and type(delfile) == "function" and isfile(path) then
+		pcall(delfile, path)
+		self._lastCollected = nil
 		return true
 	end
 	return false
@@ -1046,6 +1266,18 @@ local function NewConfigManager(window)
 		Path = window.Folder .. "/configs",
 		Configs = {},
 	}
+	-- config utama per game: <Folder>/<Nama Game> Config.lua
+	manager.GameConfig = setmetatable({
+		Name = "Game",
+		Window = window,
+		Manager = manager,
+		Path = window.Folder .. "/Config.lua",
+		PathResolver = function()
+			return GameConfigPath(window)
+		end,
+		KeepUnknown = true,
+		_extra = {},
+	}, ConfigClass)
 	function manager:CreateConfig(name)
 		name = tostring(name or "default"):gsub("[^%w_%-]", "_")
 		local config = setmetatable({
@@ -1510,6 +1742,12 @@ local function Finish(container, cfg, obj, row, title, desc, lock)
 	if cfg.Flag then
 		obj.Flag = cfg.Flag
 		window.Flags[cfg.Flag] = obj
+		local pending = window._pendingConfig
+		if pending and pending[cfg.Flag] ~= nil then
+			local raw = pending[cfg.Flag]
+			pending[cfg.Flag] = nil
+			task.defer(ApplyValue, obj, raw)
+		end
 	end
 	return obj
 end
@@ -2807,6 +3045,90 @@ function Container:Section(cfg)
 	return section
 end
 
+-- ---------- ConfigSection: tombol Save / Load / Delete + Auto Save siap pakai ----------
+-- cfg: Title, Desc, Icon, Box, Opened, Notify (default true)
+function Container:ConfigSection(cfg)
+	cfg = cfg or {}
+	local window = self._window
+	local notify = cfg.Notify ~= false
+
+	local function report(ok, message)
+		if not notify then
+			return
+		end
+		window:Notify({
+			Title = "Config",
+			Content = tostring(message),
+			Type = ok and "Success" or "Error",
+			Duration = 4,
+		})
+	end
+
+	local section = self:Section({
+		Title = cfg.Title or "Config",
+		Desc = cfg.Desc,
+		Icon = cfg.Icon or "save",
+		Box = cfg.Box,
+		Opened = cfg.Opened,
+	})
+
+	local info = section:Paragraph({ Title = "File config", Desc = "..." })
+	task.spawn(function()
+		info:SetDesc(window:GetConfigPath())
+	end)
+
+	section:Button({
+		Title = "Save Config",
+		Desc = "Simpan semua pengaturan sekarang",
+		Icon = "save",
+		Callback = function()
+			local ok, err = window:SaveConfig()
+			report(ok, ok and "Config tersimpan" or err)
+		end,
+	})
+	section:Button({
+		Title = "Load Config",
+		Desc = "Muat pengaturan dari file",
+		Icon = "folder",
+		Callback = function()
+			local ok, result = window:LoadConfig()
+			report(ok, ok and ("Config dimuat (" .. tostring(result) .. " pengaturan)") or result)
+		end,
+	})
+	section:Button({
+		Title = "Delete Config",
+		Desc = "Hapus file config game ini",
+		Icon = "trash",
+		Callback = function()
+			window:Dialog({
+				Title = "Hapus config?",
+				Content = "File config game ini akan dihapus permanen.",
+				Icon = "trash",
+				Buttons = {
+					{ Title = "Batal", Variant = "Secondary" },
+					{
+						Title = "Hapus",
+						Variant = "Danger",
+						Callback = function()
+							local ok = window:DeleteConfig()
+							report(ok, ok and "Config dihapus" or "File config tidak ditemukan")
+						end,
+					},
+				},
+			})
+		end,
+	})
+	section:Toggle({
+		Title = "Auto Save",
+		Desc = "Simpan otomatis kalau ada perubahan",
+		Value = window.AutoSave == true,
+		Callback = function(value)
+			window:SetAutoSave(value)
+		end,
+	})
+	return section
+end
+
 -- ============================================================
 -- Tab
 -- ============================================================
@@ -3312,8 +3634,10 @@ function WindowClass:CreateTopbarButton(name, icon, callback, order)
 	return obj
 end
 
--- tombol bulat/pill untuk buka window saat disembunyikan
--- cfg: Title, Icon, Enabled, Draggable, OnlyMobile, Scale, CornerRadius (UDim), StrokeThickness, Color (ColorSequence)
+-- pill untuk buka window saat disembunyikan: badge logo bulat + judul, border gradasi yang berputar,
+-- efek hover / tekan, animasi muncul, dan tidak bisa di-drag keluar layar.
+-- cfg: Title (false = hanya icon), Subtitle, Icon, Enabled, Draggable, OnlyMobile, Scale, Height,
+--      CornerRadius (UDim), StrokeThickness, Color (ColorSequence), Animated (default true), Speed (detik per putaran)
 function WindowClass:EditOpenButton(cfg)
 	cfg = cfg or {}
 	local window = self
@@ -3324,11 +3648,17 @@ function WindowClass:EditOpenButton(cfg)
 	local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 	self._openEnabled = cfg.Enabled ~= false and (cfg.OnlyMobile ~= true or isMobile)
 
+	local height = cfg.Height or 46
+	local badgeSize = height - 12
+	local baseScale = cfg.Scale or 1
+	local showText = cfg.Title ~= false
+	local hasSubtitle = showText and cfg.Subtitle ~= nil and cfg.Subtitle ~= ""
+
 	local button = New("TextButton", {
 		Name = "OpenButton",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = self._openPosition or UDim2.new(0.5, 0, 0, 14),
-		Size = UDim2.fromOffset(0, 42),
+		Size = UDim2.fromOffset(0, height),
 		AutomaticSize = Enum.AutomaticSize.X,
 		Text = "",
 		AutoButtonColor = false,
@@ -3337,37 +3667,146 @@ function WindowClass:EditOpenButton(cfg)
 		Theme = { BackgroundColor3 = "Dialog" },
 		Parent = self.Gui,
 	})
-	New("UICorner", { CornerRadius = cfg.CornerRadius or UDim.new(0, 21), Parent = button })
-	local stroke = New("UIStroke", {
-		Thickness = cfg.StrokeThickness or 2,
-		Color = Color3.new(1, 1, 1),
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		Parent = button,
-	})
-	New("UIGradient", {
-		Color = cfg.Color or ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(110, 110, 110)),
-		Rotation = 45,
+	New("UICorner", { CornerRadius = cfg.CornerRadius or UDim.new(0, height / 2), Parent = button })
+
+	-- border gradasi: warna ikut tema (Outline), bagian yang "memudar" lewat Transparency gradient.
+	-- (ColorSequence tidak bisa di-tween saat ganti tema, jadi tidak di-bind ke tema)
+	local stroke
+	if cfg.Color then
+		stroke = New("UIStroke", {
+			Thickness = cfg.StrokeThickness or 2,
+			Color = Color3.new(1, 1, 1),
+			Transparency = 0.1,
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			Parent = button,
+		})
+	else
+		stroke = Stroke(button, "Outline", cfg.StrokeThickness or 2, 0.1)
+	end
+	local gradient = New("UIGradient", {
+		Rotation = 0,
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0),
+			NumberSequenceKeypoint.new(0.5, 0.75),
+			NumberSequenceKeypoint.new(1, 0),
+		}),
 		Parent = stroke,
 	})
-	if cfg.Scale then
-		New("UIScale", { Scale = cfg.Scale, Parent = button })
-	end
-	Pad(button, 0, 16, 0, 14)
-	List(button, 8, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Center)
-	local icon = MakeIcon(button, cfg.Icon or self._iconName, 22, "Text")
-	if icon then
-		icon.LayoutOrder = 1
-	end
-	if cfg.Title ~= false then
-		Text(button, cfg.Title or self.Title, {
-			Size = UDim2.fromOffset(0, 42),
-			AutomaticSize = Enum.AutomaticSize.X,
-			TextSize = 15,
-			LayoutOrder = 2,
-		})
+	if cfg.Color then
+		gradient.Color = cfg.Color
 	end
 
-	local startPos, startOffset, moved
+	local scale = New("UIScale", { Scale = baseScale, Parent = button })
+	Pad(button, 0, showText and 18 or 6, 0, 6)
+	List(button, 10, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Center)
+
+	-- badge bulat berisi logo kucing (base64)
+	local badge = New("Frame", {
+		Name = "Badge",
+		Size = UDim2.fromOffset(badgeSize, badgeSize),
+		LayoutOrder = 1,
+		Theme = { BackgroundColor3 = "Accent" },
+		Parent = button,
+	})
+	New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = badge })
+	Stroke(badge, "Outline", 1, 0.82)
+	local icon = MakeIcon(badge, cfg.Icon or self._iconName, badgeSize - 12, "Text")
+	if icon then
+		icon.AnchorPoint = Vector2.new(0.5, 0.5)
+		icon.Position = UDim2.fromScale(0.5, 0.5)
+	end
+
+	if showText then
+		local textHolder = New("Frame", {
+			Name = "Label",
+			BackgroundTransparency = 1,
+			Size = UDim2.fromOffset(0, badgeSize),
+			AutomaticSize = Enum.AutomaticSize.X,
+			LayoutOrder = 2,
+			Parent = button,
+		})
+		List(textHolder, 0, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
+		Text(textHolder, tostring(cfg.Title or self.Title), {
+			Size = UDim2.fromOffset(0, hasSubtitle and 18 or 22),
+			AutomaticSize = Enum.AutomaticSize.X,
+			TextSize = 15,
+			Weight = "Bold",
+			LayoutOrder = 1,
+		})
+		if hasSubtitle then
+			Text(textHolder, tostring(cfg.Subtitle), {
+				Size = UDim2.fromOffset(0, 14),
+				AutomaticSize = Enum.AutomaticSize.X,
+				Weight = "Regular",
+				TextSize = 12,
+				TextTransparency = 0.45,
+				LayoutOrder = 2,
+			})
+		end
+	end
+
+	-- border berputar pelan (jalan hanya saat pill terlihat)
+	local spin
+	if cfg.Animated ~= false then
+		spin = TweenService:Create(
+			gradient,
+			TweenInfo.new(cfg.Speed or 4, Enum.EasingStyle.Linear, Enum.EasingDirection.In, -1),
+			{ Rotation = 360 }
+		)
+	end
+
+	local hovering, pressing = false, false
+	local function targetScale()
+		if pressing then
+			return baseScale * 0.94
+		end
+		if hovering then
+			return baseScale * 1.05
+		end
+		return baseScale
+	end
+	local function refresh(duration)
+		Tween(scale, { Scale = targetScale() }, duration or 0.15, Enum.EasingStyle.Quad)
+	end
+
+	button.MouseEnter:Connect(function()
+		hovering = true
+		refresh()
+		Tween(stroke, { Transparency = 0 }, 0.15)
+	end)
+	button.MouseLeave:Connect(function()
+		hovering = false
+		refresh()
+		Tween(stroke, { Transparency = 0.1 }, 0.15)
+	end)
+
+	local function onVisibleChanged()
+		if button.Visible then
+			scale.Scale = baseScale * 0.7
+			Tween(scale, { Scale = targetScale() }, 0.4, Enum.EasingStyle.Back)
+			if spin then
+				spin:Play()
+			end
+		else
+			hovering, pressing = false, false
+			stroke.Transparency = 0.1
+			if spin then
+				spin:Pause()
+			end
+		end
+	end
+	button:GetPropertyChangedSignal("Visible"):Connect(onVisibleChanged)
+	button.Destroying:Connect(function()
+		if spin then
+			spin:Cancel()
+		end
+	end)
+	if button.Visible then
+		onVisibleChanged()
+	end
+
+	-- drag (ditahan di dalam layar) + klik untuk membuka window
+	local startPos, startOffset, startAbs, moved
 	Drag(button, function(pos)
 		if cfg.Draggable == false then
 			return
@@ -3377,15 +3816,32 @@ function WindowClass:EditOpenButton(cfg)
 			moved = true
 		end
 		if moved then
-			local position = UDim2.new(startOffset.X.Scale, startOffset.X.Offset + d.X, startOffset.Y.Scale, startOffset.Y.Offset + d.Y)
+			local viewport = window.Gui.AbsoluteSize
+			local size = button.AbsoluteSize
+			local topLeft = Vector2.new(
+				math.clamp(startAbs.X + d.X, 0, math.max(0, viewport.X - size.X)),
+				math.clamp(startAbs.Y + d.Y, 0, math.max(0, viewport.Y - size.Y))
+			)
+			local delta = topLeft - startAbs
+			local position = UDim2.new(
+				startOffset.X.Scale,
+				startOffset.X.Offset + delta.X,
+				startOffset.Y.Scale,
+				startOffset.Y.Offset + delta.Y
+			)
 			button.Position = position
 			window._openPosition = position
 		end
 	end, function(pos)
 		startPos = pos
 		startOffset = button.Position
+		startAbs = button.AbsolutePosition
 		moved = false
+		pressing = true
+		refresh(0.1)
 	end, function()
+		pressing = false
+		refresh(0.15)
 		if not moved then
 			window:Show()
 		end
@@ -3393,6 +3849,87 @@ function WindowClass:EditOpenButton(cfg)
 
 	self.OpenButton = button
 	return button
+end
+
+-- ---------- Config game: <Folder>/<Nama Game> Config.lua ----------
+-- Hanya element yang punya Flag yang ikut disimpan.
+function WindowClass:GetConfigPath()
+	return self.ConfigManager.GameConfig:GetPath()
+end
+
+function WindowClass:SaveConfig()
+	return self.ConfigManager.GameConfig:Save()
+end
+
+-- return: ok, jumlah pengaturan yang ketemu di UI (atau pesan error)
+function WindowClass:LoadConfig()
+	return self.ConfigManager.GameConfig:Load()
+end
+
+function WindowClass:DeleteConfig()
+	return self.ConfigManager.GameConfig:Delete()
+end
+
+function WindowClass:HasConfig()
+	return FSAvailable() and isfile(self:GetConfigPath())
+end
+
+-- simpan otomatis tiap `interval` detik, hanya kalau ada yang berubah
+function WindowClass:SetAutoSave(enabled, interval)
+	self.AutoSave = enabled and true or false
+	if interval then
+		self.AutoSaveInterval = math.max(1, tonumber(interval) or 5)
+	end
+	if self.AutoSave and not self._autoSaving then
+		self._autoSaving = true
+		task.spawn(function()
+			while not self.Destroyed do
+				task.wait(self.AutoSaveInterval)
+				if self.AutoSave and self._configReady and not self.Destroyed then
+					self:_AutoSaveStep()
+				end
+			end
+		end)
+	end
+end
+
+function WindowClass:_AutoSaveStep()
+	local config = self.ConfigManager.GameConfig
+	local data = config:_Collect()
+	if next(data) == nil then
+		return
+	end
+	if config._lastCollected and SameValue(config._lastCollected, data) then
+		return
+	end
+	config:Save()
+end
+
+-- auto load: baca file config sekali, terapkan ke element yang sudah ada, dan ke element
+-- yang dibuat belakangan (lihat Finish) selama `seconds` detik pertama.
+function WindowClass:_PrimeConfig(seconds)
+	local config = self.ConfigManager.GameConfig
+	if self.AutoLoad and FSAvailable() then
+		local path = config:GetPath()
+		if not self.Destroyed and isfile(path) then
+			local okRead, content = pcall(readfile, path)
+			if okRead then
+				local okJson, data = pcall(function()
+					return HttpService:JSONDecode(content)
+				end)
+				if okJson and type(data) == "table" then
+					self._pendingConfig = data
+					config:_Apply(data, true)
+					task.delay(seconds, function()
+						if self._pendingConfig == data then
+							self._pendingConfig = nil
+						end
+					end)
+				end
+			end
+		end
+	end
+	self._configReady = true
 end
 
 -- ============================================================
@@ -3435,6 +3972,13 @@ function NexCat:CreateWindow(cfg)
 		_baseScale = 1,
 	}, WindowClass)
 	window.ConfigManager = NewConfigManager(window)
+	window.AutoLoad = cfg.AutoLoad ~= false
+	window.AutoSave = false
+	window.AutoSaveInterval = math.max(1, tonumber(cfg.AutoSaveInterval) or 5)
+	window._configReady = false
+	if cfg.GameName then
+		NexCat:SetGameName(cfg.GameName)
+	end
 
 	local viewport = ViewportSize()
 	local size = cfg.Size or UDim2.fromOffset(580, 460)
@@ -3897,6 +4441,19 @@ function NexCat:CreateWindow(cfg)
 		openCfg.Enabled = false
 	end
 	window:EditOpenButton(openCfg)
+
+	-- simpan sekali lagi saat window ditutup (kalau Auto Save aktif)
+	window:OnClose(function()
+		if window.AutoSave and window._configReady then
+			window:_AutoSaveStep()
+		end
+	end)
+	if cfg.AutoSave == true then
+		window:SetAutoSave(true)
+	end
+	task.spawn(function()
+		window:_PrimeConfig(tonumber(cfg.AutoLoadTime) or 20)
+	end)
 
 	NexCat.Windows[#NexCat.Windows + 1] = window
 	return window
