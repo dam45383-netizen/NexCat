@@ -1,10 +1,11 @@
 --[[
-	NexCat v1.1.0
+	NexCat v1.2.0
 	Library UI Roblox (Luau) dengan tampilan & API ala WindUI.
 
-	Window, Tab, Section, Button, Toggle (Switch/Checkbox), Slider, Input, Dropdown,
-	Keybind, Colorpicker, Paragraph, Code, Divider, Space, Dialog, Popup, Notify,
-	Tag, Topbar Button, Theme, ConfigManager.
+	Window, Tab, Section, Button, Toggle/Switch, Checkbox, Slider, ProgressBar,
+	Input, Dropdown, Keybind, Colorpicker, Paragraph, Image, Video, Viewport, Code,
+	Group, HStack, VStack, Divider, Space, Dialog, Popup, Notify, Tag,
+	Topbar Button, Theme, Search, ConfigManager.
 
 	Cara pakai:
 		local NexCat = loadstring(readfile("NexCat.lua"))()   -- executor
@@ -32,6 +33,8 @@
 		Tab:ConfigSection() -> tombol Save / Load / Delete + toggle Auto Save siap pakai
 		CreateWindow({ AutoLoad = true (default), AutoSave = false, AutoSaveInterval = 5 })
 	Ukuran, posisi, dan UIScale window ikut masuk ke config. Nama file config diambil otomatis dari nama game.
+	API tambahan mengikuti pola WindUI: ProgressBar, Image, Video, Viewport, Group, HStack,
+	VStack, dan pencarian sampai level element.
 ]]
 
 local Players = game:GetService("Players")
@@ -47,7 +50,7 @@ end)
 local LocalPlayer = Players.LocalPlayer
 
 local NexCat = {
-	Version = "1.1.0",
+	Version = "1.2.0",
 	Windows = {},
 	TransparencyValue = 0.2,
 	Fonts = {
@@ -276,6 +279,14 @@ local function Complete(theme)
 	theme.Success = theme.Success or Hex("#34d399")
 	theme.Warning = theme.Warning or Hex("#fbbf24")
 	theme.Danger = theme.Danger or Hex("#f85151")
+	theme.ProgressBar = theme.ProgressBar or theme.Toggle
+	theme.ProgressBarTrack = theme.ProgressBarTrack or theme.Button
+	theme.ProgressBarTrackTransparency = theme.ProgressBarTrackTransparency or 0.88
+	theme.ProgressBarText = theme.ProgressBarText or theme.Text
+	theme.ElementBackground = theme.ElementBackground or theme.Dialog
+	theme.ElementBackgroundTransparency = theme.ElementBackgroundTransparency or 0
+	theme.Tooltip = theme.Tooltip or theme.Dialog
+	theme.TooltipText = theme.TooltipText or theme.Text
 	theme.White = Hex("#FFFFFF")
 	return theme
 end
@@ -794,6 +805,7 @@ function NexCat:SetTheme(name)
 	if not theme then
 		return false
 	end
+	local previous = self.ThemeName
 	self.Theme = theme
 	self.ThemeName = name
 	local alive = {}
@@ -805,7 +817,28 @@ function NexCat:SetTheme(name)
 		end
 	end
 	Bound = alive
+	for _, callback in ipairs(self._themeCallbacks or {}) do
+		Fire(callback, name, previous)
+	end
 	return true
+end
+
+function NexCat:OnThemeChange(callback)
+	if type(callback) ~= "function" then
+		return false
+	end
+	self._themeCallbacks = self._themeCallbacks or {}
+	table.insert(self._themeCallbacks, callback)
+	return {
+		Disconnect = function()
+			for index, item in ipairs(self._themeCallbacks) do
+				if item == callback then
+					table.remove(self._themeCallbacks, index)
+					break
+				end
+			end
+		end,
+	}
 end
 
 -- sama seperti WindUI: key = nama theme. Cocok untuk `for name in pairs(NexCat:GetThemes())`
@@ -867,6 +900,33 @@ function NexCat:GetTransparency()
 	return self.Windows[1] ~= nil and self.Windows[1].Transparent == true
 end
 
+function NexCat:SetNotificationLower(value)
+	self._notificationLower = value == true
+	local holder = self._notifHolder
+	if holder then
+		holder.AnchorPoint = Vector2.new(1, self._notificationLower and 1 or 0)
+		holder.Position = self._notificationLower and UDim2.new(1, -16, 1, -16) or UDim2.new(1, -16, 0, 16)
+		local layout = holder:FindFirstChildOfClass("UIListLayout")
+		if layout then
+			layout.VerticalAlignment = self._notificationLower and Enum.VerticalAlignment.Bottom or Enum.VerticalAlignment.Top
+		end
+		holder:SetAttribute("NotificationLower", self._notificationLower)
+	end
+	return true
+end
+
+function NexCat:ToggleAcrylic(value)
+	-- Acrylic blur shader is environment-specific; keep the visual fallback safe.
+	local window = self.Windows[1]
+	if window then
+		window.Acrylic = value == true
+		if window.Frame then
+			window.Frame.BackgroundTransparency = value and math.max(self.TransparencyValue, 0.2) or (window.Transparent and self.TransparencyValue or 0)
+		end
+	end
+	return window ~= nil
+end
+
 function NexCat:GetWindowSize()
 	local window = self.Windows[1]
 	if window and window.Frame then
@@ -885,15 +945,19 @@ function NexCat:_NotifyHolder()
 	end
 	local gui = NewGui("NexCat_Notify", 1000)
 	local width = math.min(320, ViewportSize().X - 32)
+	local lower = self._notificationLower ~= false
 	local holder = New("Frame", {
 		Name = "Holder",
-		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, -16, 1, -16),
+		AnchorPoint = Vector2.new(1, lower and 1 or 0),
+		Position = lower and UDim2.new(1, -16, 1, -16) or UDim2.new(1, -16, 0, 16),
 		Size = UDim2.new(0, width, 1, -32),
 		BackgroundTransparency = 1,
 		Parent = gui,
 	})
-	List(holder, 8, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Right, Enum.VerticalAlignment.Bottom)
+	local layout = List(holder, 8, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Right, lower and Enum.VerticalAlignment.Bottom or Enum.VerticalAlignment.Top)
+	holder:SetAttribute("NotificationLayout", true)
+	holder:SetAttribute("NotificationLower", lower)
+	holder:SetAttribute("LayoutObject", layout.Name)
 	self._notifGui = gui
 	self._notifHolder = holder
 	return holder
@@ -1088,7 +1152,7 @@ local function ApplyValue(element, raw)
 			return true
 		end
 	end
-	pcall(element.Set, element, Decode(raw))
+	pcall(element.Set, element, Decode(raw), true)
 	return true
 end
 
@@ -1344,6 +1408,9 @@ local function NewConfigManager(window)
 	end
 	function manager:GetConfig(name)
 		return manager.Configs[name]
+	end
+	function manager:CreateConfigFromFile(name)
+		return self:CreateConfig(name)
 	end
 	function manager:AllConfigs()
 		local names = {}
@@ -1759,18 +1826,80 @@ local function Card(container, cfg, rightWidth, noIcon)
 	return row, inner, header, title, desc, lock
 end
 
+-- Hitung ulang lebar child HStack/Group secara proporsional.
+local function ReflowStack(container)
+	if not container or not container._stackElements or container._layoutKind ~= "Horizontal" then
+		return
+	end
+	local alive, flexibleCount, fixedWidth = {}, 0, 0
+	for _, element in ipairs(container._stackElements) do
+		if element and element.Element and element.Element.Parent then
+			alive[#alive + 1] = element
+			if element._fixedWidth then
+				fixedWidth += math.max(0, tonumber(element._fixedWidth) or 0)
+			else
+				flexibleCount += 1
+			end
+		end
+	end
+	container._stackElements = alive
+	if #alive == 0 or flexibleCount == 0 then
+		return
+	end
+	local gap = math.max(0, tonumber(container._gap) or 6)
+	local share = 1 / flexibleCount
+	local offset = -(gap * math.max(0, #alive - 1) + fixedWidth) / flexibleCount
+	for _, element in ipairs(alive) do
+		local current = element.Element.Size
+		if element._fixedWidth then
+			element.Element.Size = UDim2.new(0, math.max(0, tonumber(element._fixedWidth) or 0), current.Y.Scale, current.Y.Offset)
+		else
+			element.Element.Size = UDim2.new(share, offset, current.Y.Scale, current.Y.Offset)
+		end
+	end
+end
+
 -- method umum untuk semua element
 local function Finish(container, cfg, obj, row, title, desc, lock)
 	obj.Element = row
+	obj.Title = tostring(cfg.Title or (title and title.Text) or "")
+	obj.Desc = tostring(cfg.Desc or "")
+	obj._userVisible = true
 	local window = container._window
 	window._elements[#window._elements + 1] = obj
+
+	-- Tab/group tree powers element-aware search without losing the original layout.
+	local tab = container._tab
+	if tab then
+		if container._groupParent then
+			container._groupParent._children[#container._groupParent._children + 1] = obj
+		else
+			tab._roots[#tab._roots + 1] = obj
+		end
+	end
+	if container._stackElements then
+		container._stackElements[#container._stackElements + 1] = obj
+		ReflowStack(container)
+	end
+
 	function obj:SetTitle(value)
-		title.Text = tostring(value)
+		obj.Title = tostring(value)
+		if title then
+			title.Text = obj.Title
+		end
+		if window._RefreshSearch then
+			window:_RefreshSearch()
+		end
 	end
 	function obj:SetDesc(value)
-		value = value or ""
-		desc.Text = tostring(value)
-		desc.Visible = value ~= ""
+		obj.Desc = tostring(value or "")
+		if desc then
+			desc.Text = obj.Desc
+			desc.Visible = obj.Desc ~= ""
+		end
+		if window._RefreshSearch then
+			window:_RefreshSearch()
+		end
 	end
 	function obj:Lock()
 		if lock then
@@ -1783,13 +1912,33 @@ local function Finish(container, cfg, obj, row, title, desc, lock)
 		end
 	end
 	function obj:SetVisible(visible)
-		row.Visible = visible and true or false
+		obj._userVisible = visible == true
+		if window._RefreshSearch then
+			window:_RefreshSearch()
+		else
+			row.Visible = obj._userVisible
+		end
 	end
 	function obj:Destroy()
 		if obj.Flag then
 			window.Flags[obj.Flag] = nil
 		end
-		row:Destroy()
+		for _, list in ipairs({ window._elements, tab and tab._roots or {}, container._stackElements or {}, container._groupParent and container._groupParent._children or {} }) do
+			for index = #list, 1, -1 do
+				if list[index] == obj then
+					table.remove(list, index)
+				end
+			end
+		end
+		if container._stackElements then
+			ReflowStack(container)
+		end
+		if row and row.Parent then
+			row:Destroy()
+		end
+		if window._RefreshSearch then
+			window:_RefreshSearch()
+		end
 	end
 	if cfg.Flag then
 		obj.Flag = cfg.Flag
@@ -1800,6 +1949,9 @@ local function Finish(container, cfg, obj, row, title, desc, lock)
 			pending[cfg.Flag] = nil
 			task.defer(ApplyValue, obj, raw)
 		end
+	end
+	if window._RefreshSearch then
+		window:_RefreshSearch()
 	end
 	return obj
 end
@@ -1998,13 +2150,13 @@ function Container:Slider(cfg)
 	else
 		min, max, default = cfg.Min, cfg.Max, v or cfg.Default
 	end
-	min = min or 0
-	max = max or 100
+	min = tonumber(min) or 0
+	max = tonumber(max) or 100
 	if max < min then
 		min, max = max, min
 	end
-	default = default or min
-	local step = cfg.Step or cfg.Increment or 1
+	default = tonumber(default) or min
+	local step = tonumber(cfg.Step or cfg.Increment) or 1
 	if step <= 0 then
 		step = 1
 	end
@@ -2099,6 +2251,41 @@ function Container:Slider(cfg)
 	end
 	function obj:Get()
 		return value
+	end
+	function obj:SetRange(newMin, newMax, silent)
+		newMin = tonumber(newMin)
+		newMax = tonumber(newMax)
+		if not newMin or not newMax then
+			return min, max
+		end
+		if newMin > newMax then
+			newMin, newMax = newMax, newMin
+		end
+		min, max = newMin, newMax
+		obj.Min, obj.Max = min, max
+		value = snap(value)
+		obj.Value = value
+		render(0.1)
+		if not silent then
+			Fire(cfg.Callback, value)
+		end
+		return min, max
+	end
+	function obj:SetMin(newMin, silent)
+		newMin = tonumber(newMin)
+		if not newMin then
+			return min
+		end
+		obj:SetRange(newMin, math.max(newMin, max), silent)
+		return min
+	end
+	function obj:SetMax(newMax, silent)
+		newMax = tonumber(newMax)
+		if not newMax then
+			return max
+		end
+		obj:SetRange(math.min(min, newMax), newMax, silent)
+		return max
 	end
 
 	box.FocusLost:Connect(function()
@@ -2236,6 +2423,8 @@ local function NormalizeValues(values)
 				Title = tostring(name),
 				Icon = item.Icon,
 				Callback = item.Callback,
+				Locked = item.Locked == true,
+				Raw = item,
 			}
 		else
 			list[#list + 1] = { Value = item, Title = tostring(item) }
@@ -2249,6 +2438,7 @@ function Container:Dropdown(cfg)
 	local window = self._window
 	local multi = cfg.Multi == true
 	local entries = NormalizeValues(cfg.Values)
+	local advanced = type(cfg.Values) == "table" and type(cfg.Values[1]) == "table"
 	local sel = {}
 	local init = cfg.Value
 	if init == nil then
@@ -2257,11 +2447,13 @@ function Container:Dropdown(cfg)
 	if multi then
 		if type(init) == "table" then
 			for _, item in ipairs(init) do
-				sel[item] = true
+				local key = type(item) == "table" and (item.Title or item.Name or item.Value) or item
+				sel[key] = true
 			end
 		end
 	elseif init ~= nil then
-		sel[init] = true
+		local key = type(init) == "table" and (init.Title or init.Name or init.Value) or init
+		sel[key] = true
 	end
 
 	local row, _, header, title, desc, lock = Card(self, cfg, 150)
@@ -2294,14 +2486,14 @@ function Container:Dropdown(cfg)
 			local out = {}
 			for _, entry in ipairs(entries) do
 				if sel[entry.Value] then
-					out[#out + 1] = entry.Value
+					out[#out + 1] = advanced and entry.Raw or entry.Value
 				end
 			end
 			return out
 		end
 		for _, entry in ipairs(entries) do
 			if sel[entry.Value] then
-				return entry.Value
+				return advanced and entry.Raw or entry.Value
 			end
 		end
 		return nil
@@ -2309,15 +2501,17 @@ function Container:Dropdown(cfg)
 
 	local function updateLabel()
 		local current = getValue()
+		local names = {}
+		for _, entry in ipairs(entries) do
+			if sel[entry.Value] then
+				names[#names + 1] = entry.Title
+			end
+		end
 		local textValue
 		if multi then
-			local names = {}
-			for _, item in ipairs(current) do
-				names[#names + 1] = tostring(item)
-			end
 			textValue = #names > 0 and table.concat(names, ", ") or "Pilih..."
 		else
-			textValue = current ~= nil and tostring(current) or "Pilih..."
+			textValue = names[1] or "Pilih..."
 		end
 		label.Text = textValue
 		obj.Value = current
@@ -2388,6 +2582,8 @@ function Container:Dropdown(cfg)
 				BackgroundTransparency = 1,
 				Text = "",
 				AutoButtonColor = false,
+				Active = not entry.Locked,
+				Selectable = not entry.Locked,
 				LayoutOrder = i,
 				ZIndex = 53,
 				Theme = { BackgroundColor3 = "Text" },
@@ -2428,6 +2624,9 @@ function Container:Dropdown(cfg)
 				paint(option, false)
 			end)
 			optionButton.MouseButton1Click:Connect(function()
+				if entry.Locked then
+					return
+				end
 				local key = entry.Value
 				if multi then
 					sel[key] = not sel[key] or nil
@@ -2457,11 +2656,13 @@ function Container:Dropdown(cfg)
 		if multi then
 			if type(value) == "table" then
 				for _, item in ipairs(value) do
-					sel[item] = true
+					local key = type(item) == "table" and (item.Title or item.Name or item.Value) or item
+					sel[key] = true
 				end
 			end
 		elseif value ~= nil then
-			sel[value] = true
+			local key = type(value) == "table" and (value.Title or value.Name or value.Value) or value
+			sel[key] = true
 		end
 		updateLabel()
 		if not silent then
@@ -2477,7 +2678,7 @@ function Container:Dropdown(cfg)
 	function obj:Refresh(newValues, keepSelection)
 		entries = NormalizeValues(newValues)
 		obj.Values = newValues or {}
-		if not keepSelection then
+		if keepSelection == true then
 			local valid = {}
 			for _, entry in ipairs(entries) do
 				if sel[entry.Value] then
@@ -2485,6 +2686,8 @@ function Container:Dropdown(cfg)
 				end
 			end
 			sel = valid
+		else
+			sel = {}
 		end
 		updateLabel()
 	end
@@ -2862,14 +3065,21 @@ function Container:Colorpicker(cfg)
 
 	swatch.MouseButton1Click:Connect(open)
 
-	function obj:Set(value, silent)
+	function obj:Set(value, alpha, silent)
 		if typeof(value) == "string" then
 			value = HexToColor(value)
 		end
 		if typeof(value) ~= "Color3" then
 			return
 		end
+		if type(alpha) == "boolean" and silent == nil then
+			silent = alpha
+			alpha = nil
+		end
 		h, s, v = value:ToHSV()
+		if alpha ~= nil and hasAlpha then
+			transparency = math.clamp(tonumber(alpha) or transparency, 0, 1)
+		end
 		apply(not silent)
 	end
 	function obj:Get()
@@ -2881,13 +3091,38 @@ end
 -- ---------- Paragraph / Label (opsional: Buttons = { {Title, Icon, Variant, Callback} }) ----------
 function Container:Paragraph(cfg)
 	cfg = cfg or {}
-	local row, inner, _, title, desc, lock = Card(self, cfg)
+	local thumbSize = math.clamp(tonumber(cfg.ThumbnailSize) or 64, 24, 120)
+	local row, inner, header, title, desc, lock = Card(self, cfg, cfg.Thumbnail and (thumbSize + 8) or nil)
+	local thumbnail
+	if cfg.Thumbnail then
+		thumbnail = MakeIcon(header, cfg.Thumbnail, thumbSize, nil)
+		if thumbnail then
+			thumbnail.LayoutOrder = 2
+			thumbnail.Size = UDim2.fromOffset(thumbSize, thumbSize)
+			Corner(thumbnail, 8)
+		end
+	end
+
+	local image
+	if cfg.Image and cfg.Image ~= "" then
+		image = New("ImageLabel", {
+			Name = "ParagraphImage",
+			Size = UDim2.new(1, 0, 0, math.clamp(tonumber(cfg.ImageSize) or 112, 32, 260)),
+			BackgroundTransparency = 1,
+			Image = tostring(cfg.Image),
+			ScaleType = Enum.ScaleType.Crop,
+			LayoutOrder = 2,
+			Parent = inner,
+		})
+		Corner(image, 9)
+	end
+
 	if type(cfg.Buttons) == "table" and #cfg.Buttons > 0 then
 		local buttonRow = New("Frame", {
 			BackgroundTransparency = 1,
 			Size = UDim2.new(1, 0, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
-			LayoutOrder = 2,
+			LayoutOrder = image and 3 or 2,
 			Parent = inner,
 		})
 		local layout = List(buttonRow, 8, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Top)
@@ -2900,9 +3135,45 @@ function Container:Paragraph(cfg)
 			end)
 		end
 	end
-	return Finish(self, cfg, { Type = "Paragraph" }, row, title, desc, lock)
-end
 
+	local obj = Finish(self, cfg, { Type = "Paragraph" }, row, title, desc, lock)
+	function obj:SetImage(value, size)
+		if not value or value == "" then
+			if image then image:Destroy() image = nil end
+			return
+		end
+		if not image then
+			image = New("ImageLabel", {
+				Name = "ParagraphImage",
+				Size = UDim2.new(1, 0, 0, math.clamp(tonumber(size) or 112, 32, 260)),
+				BackgroundTransparency = 1,
+				ScaleType = Enum.ScaleType.Crop,
+				LayoutOrder = 2,
+				Parent = inner,
+			})
+			Corner(image, 9)
+		elseif size then
+			image.Size = UDim2.new(1, 0, 0, math.clamp(tonumber(size) or 112, 32, 260))
+		end
+		image.Image = tostring(value)
+	end
+	function obj:SetThumbnail(value, size)
+		if thumbnail then
+			thumbnail:Destroy()
+			thumbnail = nil
+		end
+		if value and value ~= "" then
+			local s = math.clamp(tonumber(size) or thumbSize, 24, 120)
+			thumbnail = MakeIcon(header, value, s, nil)
+			if thumbnail then
+				thumbnail.LayoutOrder = 2
+				thumbnail.Size = UDim2.fromOffset(s, s)
+				Corner(thumbnail, 8)
+			end
+		end
+	end
+	return obj
+end
 function Container:Label(cfg)
 	if type(cfg) == "string" then
 		cfg = { Title = cfg }
@@ -2971,20 +3242,450 @@ function Container:Code(cfg)
 	return Finish(self, cfg, obj, row, title, desc, lock)
 end
 
+-- ---------- ProgressBar ----------
+-- Value bisa number atau { Min, Max, Default }; DisplayMode = Percent | Value | Fraction.
+function Container:ProgressBar(cfg)
+	cfg = cfg or {}
+	local range = type(cfg.Value) == "table" and cfg.Value or {}
+	local minValue = tonumber(range.Min or cfg.Min) or 0
+	local maxValue = tonumber(range.Max or cfg.Max) or 100
+	if minValue > maxValue then
+		minValue, maxValue = maxValue, minValue
+	end
+	local initial = tonumber(type(cfg.Value) == "number" and cfg.Value or range.Default or cfg.Default) or minValue
+	local value = math.clamp(initial, minValue, maxValue)
+	local showValue = cfg.ShowValue ~= false and cfg.Indeterminate ~= true
+	local displayMode = cfg.DisplayMode or "Percent"
+	local row, inner, header, title, desc, lock = Card(self, cfg, showValue and 58 or nil)
+	local holder = New("Frame", {
+		Name = "ProgressBar",
+		Size = UDim2.new(1, 0, 0, 18),
+		BackgroundTransparency = 1,
+		LayoutOrder = 2,
+		Parent = inner,
+	})
+	local track = New("Frame", {
+		Name = "Track",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.fromScale(0, 0.5),
+		Size = UDim2.new(1, showValue and -66 or 0, 0, 7),
+		Theme = {
+			BackgroundColor3 = "ProgressBarTrack",
+			BackgroundTransparency = "ProgressBarTrackTransparency",
+		},
+		Parent = holder,
+	})
+	Corner(track, 5)
+	local colorThemeKey = type(cfg.Color) == "string" and NexCat.Theme[cfg.Color] and cfg.Color or "ProgressBar"
+	local fill = New("Frame", {
+		Name = "Fill",
+		Size = UDim2.fromScale(maxValue == minValue and 1 or (value - minValue) / (maxValue - minValue), 1),
+		Theme = { BackgroundColor3 = colorThemeKey },
+		Parent = track,
+	})
+	if typeof(cfg.Color) == "Color3" then
+		fill.BackgroundColor3 = cfg.Color
+	elseif type(cfg.Color) == "string" and cfg.Color:match("^#%x%x%x%x%x%x$") then
+		fill.BackgroundColor3 = Color3.fromHex(cfg.Color)
+	end
+	Corner(fill, 5)
+	local valueLabel
+	if showValue then
+		valueLabel = Text(holder, "", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, 0, 0.5, 0),
+			Size = UDim2.fromOffset(58, 20),
+			TextSize = 13,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			TextTransparency = 0.2,
+			Theme = { TextColor3 = "ProgressBarText" },
+		})
+	end
+
+	local obj = { Type = "ProgressBar", Min = minValue, Max = maxValue, Value = value }
+	local function ratio()
+		if maxValue == minValue then
+			return value >= maxValue and 1 or 0
+		end
+		return math.clamp((value - minValue) / (maxValue - minValue), 0, 1)
+	end
+	local function formatValue()
+		local percent = ratio() * 100
+		if type(cfg.Format) == "function" then
+			local ok, result = pcall(cfg.Format, value, percent, minValue, maxValue)
+			if ok and result ~= nil then
+				return tostring(result)
+			end
+		end
+		if displayMode == "Value" then
+			return tostring(value)
+		elseif displayMode == "Fraction" then
+			return tostring(value) .. "/" .. tostring(maxValue)
+		end
+		return tostring(math.floor(percent + 0.5)) .. "%"
+	end
+	local function render(instant)
+		if cfg.Indeterminate then
+			fill.Size = UDim2.new(0.3, 0, 1, 0)
+		else
+			local target = UDim2.fromScale(ratio(), 1)
+			if instant or cfg.Animate == false then
+				fill.Size = target
+			else
+				Tween(fill, { Size = target }, tonumber(cfg.AnimationDuration) or 0.16)
+			end
+		end
+		if valueLabel then
+			valueLabel.Text = formatValue()
+		end
+	end
+	function obj:Set(nextValue, silent)
+		local parsed = tonumber(nextValue)
+		if not parsed or parsed ~= parsed or math.abs(parsed) == math.huge then
+			return value
+		end
+		value = math.clamp(parsed, minValue, maxValue)
+		obj.Value = value
+		render(false)
+		if not silent then
+			Fire(cfg.Callback, value)
+		end
+		return value
+	end
+	function obj:Get()
+		return value
+	end
+	function obj:GetPercentage()
+		return ratio() * 100
+	end
+	function obj:SetRange(newMin, newMax, silent)
+		newMin, newMax = tonumber(newMin), tonumber(newMax)
+		if not newMin or not newMax then
+			return minValue, maxValue
+		end
+		if newMin > newMax then
+			newMin, newMax = newMax, newMin
+		end
+		minValue, maxValue = newMin, newMax
+		obj.Min, obj.Max = minValue, maxValue
+		value = math.clamp(value, minValue, maxValue)
+		obj.Value = value
+		render(false)
+		if not silent then
+			Fire(cfg.Callback, value)
+		end
+		return minValue, maxValue
+	end
+	function obj:SetMin(newMin, silent)
+		newMin = tonumber(newMin)
+		if newMin then
+			obj:SetRange(newMin, math.max(newMin, maxValue), silent)
+		end
+		return minValue
+	end
+	function obj:SetMax(newMax, silent)
+		newMax = tonumber(newMax)
+		if newMax then
+			obj:SetRange(math.min(minValue, newMax), newMax, silent)
+		end
+		return maxValue
+	end
+	if cfg.Indeterminate then
+		local tween = TweenService:Create(fill, TweenInfo.new(1 / math.max(tonumber(cfg.Speed) or 1, 0.01), Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1, false), {
+			Position = UDim2.new(1, 0, 0, 0),
+		})
+		fill.Position = UDim2.new(-0.3, 0, 0, 0)
+		tween:Play()
+		row.Destroying:Connect(function()
+			tween:Cancel()
+		end)
+	end
+	render(true)
+	return Finish(self, cfg, obj, row, title, desc, lock)
+end
+
+-- ---------- Image ----------
+-- Image asset mengikuti format Roblox (rbxassetid://...). URL web mentah tidak didukung ImageLabel.
+function Container:Image(cfg)
+	if type(cfg) == "string" or type(cfg) == "number" then
+		cfg = { Image = tostring(cfg) }
+	end
+	cfg = cfg or {}
+	local row, inner, header, title, desc, lock = Card(self, cfg)
+	local imageHolder = New("Frame", {
+		Name = "ImageHolder",
+		Size = UDim2.new(1, 0, 0, math.clamp(tonumber(cfg.Height) or 150, 40, 420)),
+		ClipsDescendants = true,
+		BackgroundTransparency = 0.9,
+		Theme = { BackgroundColor3 = "ElementBackground" },
+		LayoutOrder = 2,
+		Parent = inner,
+	})
+	Corner(imageHolder, tonumber(cfg.Radius) or 10)
+	local image = New("ImageLabel", {
+		Name = "Image",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Image = tostring(cfg.Image or ""),
+		ScaleType = ToEnum(Enum.ScaleType, cfg.ScaleType, Enum.ScaleType.Crop),
+		Parent = imageHolder,
+	})
+	Corner(image, tonumber(cfg.Radius) or 10)
+	local click
+	if type(cfg.Callback) == "function" then
+		click = New("TextButton", {
+			Name = "ImageClick",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Text = "",
+			AutoButtonColor = false,
+			ZIndex = 4,
+			Parent = imageHolder,
+		})
+		click.Activated:Connect(function()
+			Fire(cfg.Callback, image.Image)
+		end)
+	end
+	local obj = Finish(self, cfg, { Type = "Image" }, row, title, desc, lock)
+	function obj:SetImage(value)
+		image.Image = tostring(value or "")
+	end
+	function obj:Get()
+		return image.Image
+	end
+	return obj
+end
+
+-- ---------- Viewport ----------
+-- Object: Model/BasePart. Object is cloned by default so the caller's instance isn't reparented.
+function Container:Viewport(cfg)
+	cfg = cfg or {}
+	local row, inner, header, title, desc, lock = Card(self, cfg)
+	local viewport = New("ViewportFrame", {
+		Name = "Viewport",
+		Size = UDim2.new(1, 0, 0, math.clamp(tonumber(cfg.Height) or 190, 80, 420)),
+		BackgroundTransparency = 0.15,
+		ClipsDescendants = true,
+		Active = cfg.Interactive == true,
+		Theme = { BackgroundColor3 = "ElementBackground" },
+		LayoutOrder = 2,
+		Parent = inner,
+	})
+	Corner(viewport, 10)
+	Stroke(viewport, "Outline", 1, 0.9)
+	local camera = cfg.Camera or Instance.new("Camera")
+	camera.Parent = viewport
+	viewport.CurrentCamera = camera
+	local worldModel = Instance.new("WorldModel")
+	worldModel.Parent = viewport
+	local object
+	local pivot = Vector3.zero
+	local dragging = false
+	local lastPosition
+
+	local function focusCamera()
+		if not object or not object.Parent then
+			return
+		end
+		local boxCFrame, boxSize
+		if object:IsA("Model") then
+			local ok, cf, size = pcall(function()
+				return object:GetBoundingBox()
+			end)
+			if not ok then return end
+			boxCFrame, boxSize = cf, size
+		elseif object:IsA("BasePart") then
+			boxCFrame, boxSize = object.CFrame, object.Size
+		else
+			return
+		end
+		pivot = boxCFrame.Position
+		local extent = math.max(boxSize.X, boxSize.Y, boxSize.Z, 1)
+		local distance = extent * 2.2
+		camera.CFrame = CFrame.lookAt(pivot + Vector3.new(distance * 0.25, extent * 0.35, distance), pivot)
+	end
+
+	local obj = { Type = "Viewport", Camera = camera }
+	function obj:SetObject(instance, cloneObject)
+		if object then
+			object:Destroy()
+			object = nil
+		end
+		worldModel:ClearAllChildren()
+		if typeof(instance) ~= "Instance" then
+			return false
+		end
+		local shouldClone = cloneObject
+		if shouldClone == nil then shouldClone = cfg.Clone ~= false end
+		local source = instance
+		if shouldClone then
+			local ok, copy = pcall(function()
+				return instance:Clone()
+			end)
+			if not ok or not copy then
+				return false
+			end
+			source = copy
+		end
+		if not (source:IsA("Model") or source:IsA("BasePart")) then
+			if shouldClone then source:Destroy() end
+			return false
+		end
+		object = source
+		object.Parent = worldModel
+		if cfg.Focused ~= false then
+			focusCamera()
+		end
+		return true
+	end
+	function obj:SetHeight(height)
+		viewport.Size = UDim2.new(1, 0, 0, math.clamp(tonumber(height) or 190, 80, 420))
+	end
+	function obj:Focus()
+		focusCamera()
+	end
+	function obj:SetCamera(newCamera)
+		if typeof(newCamera) ~= "Instance" or not newCamera:IsA("Camera") then
+			return false
+		end
+		camera = newCamera
+		camera.Parent = viewport
+		viewport.CurrentCamera = camera
+		obj.Camera = camera
+		return true
+	end
+	function obj:SetInteractive(enabled)
+		viewport.Active = enabled == true
+		cfg.Interactive = viewport.Active
+	end
+	if cfg.Object then
+		obj:SetObject(cfg.Object, cfg.Clone)
+	end
+
+	if cfg.Interactive == true then
+		viewport.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = true
+				lastPosition = input.Position
+				if self._scroll then self._scroll.ScrollingEnabled = false end
+			end
+		end)
+		self._window:_Connect(UserInputService.InputChanged, function(input)
+			if not dragging or not lastPosition or not object then return end
+			if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+			local delta = input.Position - lastPosition
+			lastPosition = input.Position
+			local cameraOffset = camera.CFrame.Position - pivot
+			local yaw = CFrame.fromAxisAngle(Vector3.new(0, 1, 0), -delta.X * 0.01)
+			local pitch = CFrame.fromAxisAngle(camera.CFrame.RightVector, -delta.Y * 0.01)
+			local rotated = yaw * pitch:VectorToWorldSpace(cameraOffset)
+			camera.CFrame = CFrame.lookAt(pivot + rotated, pivot)
+		end)
+		self._window:_Connect(UserInputService.InputEnded, function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = false
+				lastPosition = nil
+				if self._scroll then self._scroll.ScrollingEnabled = true end
+			end
+		end)
+		viewport.InputChanged:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseWheel and object then
+				local zoom = input.Position.Z * 1.5
+				camera.CFrame = camera.CFrame + camera.CFrame.LookVector * zoom
+			end
+		end)
+	end
+	return Finish(self, cfg, obj, row, title, desc, lock)
+end
+
+-- ---------- Video ----------
+-- VideoFrame menggunakan asset video Roblox yang valid; URL web mentah tidak diunduh oleh library.
+function Container:Video(cfg)
+	cfg = cfg or {}
+	local row, inner, header, title, desc, lock = Card(self, cfg)
+	local holder = New("Frame", {
+		Name = "VideoHolder",
+		Size = UDim2.new(1, 0, 0, math.clamp(tonumber(cfg.Height) or 180, 80, 420)),
+		BackgroundTransparency = 0.9,
+		ClipsDescendants = true,
+		Theme = { BackgroundColor3 = "ElementBackground" },
+		LayoutOrder = 2,
+		Parent = inner,
+	})
+	Corner(holder, tonumber(cfg.Radius) or 10)
+	local video = New("VideoFrame", {
+		Name = "Video",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Video = tostring(cfg.Video or cfg.Value or ""),
+		Looped = cfg.Looped == true,
+		Volume = math.clamp(tonumber(cfg.Volume) or 0.5, 0, 10),
+		Parent = holder,
+	})
+	local obj = { Type = "Video", Element = video }
+	function obj:Play()
+		local ok = pcall(function() video:Play() end)
+		return ok
+	end
+	function obj:Pause()
+		local ok = pcall(function() video:Pause() end)
+		return ok
+	end
+	function obj:SetVideo(asset)
+		video.Video = tostring(asset or "")
+		if cfg.AutoPlay then
+			obj:Play()
+		end
+	end
+	function obj:SetVolume(volume)
+		video.Volume = math.clamp(tonumber(volume) or video.Volume, 0, 10)
+	end
+	function obj:SetLooped(looped)
+		video.Looped = looped == true
+	end
+	function obj:SetHeight(height)
+		holder.Size = UDim2.new(1, 0, 0, math.clamp(tonumber(height) or 180, 80, 420))
+	end
+	if cfg.AutoPlay == true then
+		obj:Play()
+	end
+	return Finish(self, cfg, obj, row, title, desc, lock)
+end
+
 -- ---------- Divider / Space ----------
 function Container:Divider()
+	local horizontal = self._layoutKind == "Horizontal"
 	local line = New("Frame", {
 		Name = "Divider",
-		Size = UDim2.new(1, 0, 0, 1),
+		Size = horizontal and UDim2.new(0, 1, 0, 30) or UDim2.new(1, 0, 0, 1),
 		BorderSizePixel = 0,
 		BackgroundTransparency = 0.9,
 		LayoutOrder = NextOrder(self._content),
 		Theme = { BackgroundColor3 = "Outline" },
 		Parent = self._content,
 	})
-	return { Type = "Divider", Element = line, Destroy = function()
-		line:Destroy()
-	end }
+	local obj = { Type = "Divider", Element = line, _fixedWidth = horizontal and 1 or nil, _tab = self._tab, _groupParent = self._groupParent, _stackParent = horizontal and self or nil }
+	function obj:Destroy()
+		if line.Parent then line:Destroy() end
+		for _, list in ipairs({ self._tab and self._tab._roots or {}, self._groupParent and self._groupParent._children or {}, self._stackParent and self._stackParent._stackElements or {} }) do
+			for index = #list, 1, -1 do
+				if list[index] == self then table.remove(list, index) end
+			end
+		end
+		if self._stackParent then ReflowStack(self._stackParent) end
+	end
+	if self._tab then
+		if self._groupParent then
+			table.insert(self._groupParent._children, obj)
+		else
+			table.insert(self._tab._roots, obj)
+		end
+	end
+	if self._stackElements and horizontal then
+		self._stackElements[#self._stackElements + 1] = obj
+		ReflowStack(self)
+	end
+	return obj
 end
 
 function Container:Space(cfg)
@@ -2994,16 +3695,37 @@ function Container:Space(cfg)
 	elseif type(cfg) == "table" and cfg.Columns then
 		columns = cfg.Columns
 	end
+	local size = math.max(1, columns)
+	local horizontal = self._layoutKind == "Horizontal"
 	local space = New("Frame", {
 		Name = "Space",
-		Size = UDim2.new(1, 0, 0, 14 * math.max(columns, 1)),
+		Size = horizontal and UDim2.fromOffset(14 * size, 1) or UDim2.new(1, 0, 0, 14 * size),
 		BackgroundTransparency = 1,
 		LayoutOrder = NextOrder(self._content),
 		Parent = self._content,
 	})
-	return { Type = "Space", Element = space, Destroy = function()
-		space:Destroy()
-	end }
+	local obj = { Type = "Space", Element = space, _fixedWidth = horizontal and (14 * size) or nil, _tab = self._tab, _groupParent = self._groupParent, _stackParent = horizontal and self or nil }
+	function obj:Destroy()
+		if space.Parent then space:Destroy() end
+		for _, list in ipairs({ self._tab and self._tab._roots or {}, self._groupParent and self._groupParent._children or {}, self._stackParent and self._stackParent._stackElements or {} }) do
+			for index = #list, 1, -1 do
+				if list[index] == self then table.remove(list, index) end
+			end
+		end
+		if self._stackParent then ReflowStack(self._stackParent) end
+	end
+	if self._tab then
+		if self._groupParent then
+			table.insert(self._groupParent._children, obj)
+		else
+			table.insert(self._tab._roots, obj)
+		end
+	end
+	if self._stackElements and horizontal then
+		table.insert(self._stackElements, obj)
+		ReflowStack(self)
+	end
+	return obj
 end
 
 -- ---------- Section (grup yang bisa dilipat, opsional Box) ----------
@@ -3089,6 +3811,8 @@ function Container:Section(cfg)
 		_content = body,
 		_window = self._window,
 		_scroll = self._scroll,
+		_tab = self._tab or (self.Type == "Tab" and self or nil),
+		_groupParent = self._groupParent,
 		Opened = cfg.Opened ~= false,
 	}, Container)
 
@@ -3110,6 +3834,16 @@ function Container:Section(cfg)
 	end
 	function section:SetTitle(value)
 		titleLabel.Text = tostring(value)
+		section.Title = tostring(value)
+		if window._RefreshSearch then
+			window:_RefreshSearch()
+		end
+	end
+	function section:SetDesc(value)
+		section.Desc = tostring(value or "")
+		if window._RefreshSearch then
+			window:_RefreshSearch()
+		end
 	end
 	function section:Destroy()
 		wrapper:Destroy()
@@ -3119,6 +3853,99 @@ function Container:Section(cfg)
 	end)
 	render()
 	return section
+end
+
+-- ---------- Group / HStack / VStack ----------
+-- Container anak menggunakan API element yang sama. HStack/Group membagi lebar otomatis.
+local function CreateStack(parent, cfg, kind)
+	cfg = cfg or {}
+	local horizontal = kind ~= "VStack"
+	local gap = math.max(0, tonumber(cfg.Gap) or (parent._tab and parent._tab.Gap) or 6)
+	local frame = New("Frame", {
+		Name = kind,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		LayoutOrder = NextOrder(parent._content),
+		Parent = parent._content,
+	})
+	List(
+		frame,
+		gap,
+		horizontal and Enum.FillDirection.Horizontal or Enum.FillDirection.Vertical,
+		horizontal and Enum.HorizontalAlignment.Left or Enum.HorizontalAlignment.Left,
+		Enum.VerticalAlignment.Top
+	)
+	local stack = setmetatable({
+		Type = kind,
+		Title = tostring(cfg.Title or ""),
+		Desc = tostring(cfg.Desc or ""),
+		Element = frame,
+		_content = frame,
+		_window = parent._window,
+		_scroll = parent._scroll,
+		_tab = parent._tab or (parent.Type == "Tab" and parent or nil),
+		_groupParent = parent._groupParent,
+		_children = {},
+		_stackElements = {},
+		_layoutKind = horizontal and "Horizontal" or "Vertical",
+		_gap = gap,
+		Opened = true,
+	}, Container)
+
+	function stack:SetVisible(visible)
+		stack._userVisible = visible == true
+		if stack._window._RefreshSearch then
+			stack._window:_RefreshSearch()
+		else
+			frame.Visible = stack._userVisible
+		end
+	end
+	function stack:Destroy()
+		if frame.Parent then frame:Destroy() end
+		if stack._groupParent then
+			for i = #stack._groupParent._children, 1, -1 do
+				if stack._groupParent._children[i] == stack then
+					table.remove(stack._groupParent._children, i)
+				end
+			end
+		elseif stack._tab then
+			for i = #stack._tab._roots, 1, -1 do
+				if stack._tab._roots[i] == stack then
+					table.remove(stack._tab._roots, i)
+				end
+			end
+		end
+		if parent._stackElements then
+			ReflowStack(parent)
+		end
+		if stack._window._RefreshSearch then
+			stack._window:_RefreshSearch()
+		end
+	end
+
+	if stack._groupParent then
+		table.insert(stack._groupParent._children, stack)
+	elseif stack._tab then
+		table.insert(stack._tab._roots, stack)
+	end
+	if parent._stackElements then
+		parent._stackElements[#parent._stackElements + 1] = stack
+		ReflowStack(parent)
+	end
+	return stack
+end
+
+function Container:Group(cfg)
+	return CreateStack(self, cfg, "Group")
+end
+
+function Container:HStack(cfg)
+	return CreateStack(self, cfg, "HStack")
+end
+
+function Container:VStack(cfg)
+	return CreateStack(self, cfg, "VStack")
 end
 
 -- ---------- ConfigSection: tombol Save / Load / Delete + Auto Save siap pakai ----------
@@ -3215,7 +4042,10 @@ local function CreateTab(window, parent, cfg)
 	tab.Type = "Tab"
 	tab.Title = tostring(cfg.Title or "Tab")
 	tab.Desc = cfg.Desc
+	tab.Gap = tonumber(cfg.Gap) or 6
 	tab._window = window
+	tab._tab = tab
+	tab._roots = {}
 
 	local button = New("TextButton", {
 		Name = tab.Title,
@@ -3274,6 +4104,7 @@ local function CreateTab(window, parent, cfg)
 
 	local selected = false
 	local locked = cfg.Locked == true
+	tab.Locked = locked
 
 	local function dim()
 		return locked and 0.7 or (selected and 0 or 0.45)
@@ -3298,17 +4129,23 @@ local function CreateTab(window, parent, cfg)
 	function tab:SetTitle(value)
 		tab.Title = tostring(value)
 		label.Text = tab.Title
+		button.Name = tab.Title
+		if window._RefreshSearch then
+			window:_RefreshSearch()
+		end
 	end
 	function tab:SetDesc(value)
 		tab.Desc = value
 	end
 	function tab:Lock()
 		locked = true
+		tab.Locked = true
 		Tween(label, { TextTransparency = dim() }, 0.15)
 		IconAlpha(icon, dim(), 0.15)
 	end
 	function tab:Unlock()
 		locked = false
+		tab.Locked = false
 		Tween(label, { TextTransparency = dim() }, 0.15)
 		IconAlpha(icon, dim(), 0.15)
 	end
@@ -3386,6 +4223,58 @@ function WindowClass:SelectTab(target)
 	end
 	self._selected = tab
 	tab:_SetActive(true)
+end
+
+function WindowClass:_RefreshSearch()
+	local query = tostring(self._searchQuery or ""):lower()
+	local function contains(text)
+		text = tostring(text or ""):lower()
+		return query == "" or text:find(query, 1, true) ~= nil
+	end
+	local function filterNode(node, forced)
+		if not node then return false end
+		local ownMatch = forced or contains((node.Title or "") .. " " .. (node.Desc or ""))
+		local childMatch = false
+		if type(node._children) == "table" then
+			for _, child in ipairs(node._children) do
+				if filterNode(child, ownMatch) then
+					childMatch = true
+				end
+			end
+		end
+		local visible = ownMatch or childMatch
+		if node._userVisible == false then
+			visible = false
+		end
+		if node.Element and node.Element.Parent then
+			node.Element.Visible = visible
+		end
+		return visible
+	end
+
+	for _, tab in ipairs(self.Tabs) do
+		local tabMatch = contains(tab.Title)
+		local anyMatch = false
+		for _, node in ipairs(tab._roots or {}) do
+			if filterNode(node, tabMatch) then
+				anyMatch = true
+			end
+		end
+		tab.Button.Visible = query == "" or tabMatch or anyMatch
+	end
+	if query ~= "" and self._selected and not self._selected.Button.Visible then
+		for _, tab in ipairs(self.Tabs) do
+			if tab.Button.Visible and not tab.Locked then
+				self:SelectTab(tab)
+				break
+			end
+		end
+	end
+end
+
+function WindowClass:Search(query)
+	self._searchQuery = tostring(query or "")
+	self:_RefreshSearch()
 end
 
 function WindowClass:Tab(cfg)
@@ -3581,7 +4470,28 @@ function WindowClass:_ApplySavedState(state)
 end
 
 function WindowClass:SetToggleKey(key)
+	if type(key) == "string" then
+		local ok, parsed = pcall(function()
+			return Enum.KeyCode[key]
+		end)
+		if not ok or not parsed then
+			return false
+		end
+		key = parsed
+	end
+	if typeof(key) ~= "EnumItem" then
+		return false
+	end
 	self.ToggleKey = key
+	return true
+end
+
+function WindowClass:GetSize()
+	return self.Frame and self.Frame.Size or nil
+end
+
+function WindowClass:GetUIScale()
+	return self._baseScale or 1
 end
 
 function WindowClass:SetPanelBackground(visible)
@@ -4129,7 +5039,8 @@ function NexCat:CreateWindow(cfg)
 		_destroyCallbacks = {},
 		_iconName = cfg.Icon or "nexcat",
 		_openEnabled = true,
-		_baseScale = 1,
+		_baseScale = math.clamp(tonumber(cfg.UIScale) or 1, 0.65, 1.5),
+		_searchQuery = "",
 	}, WindowClass)
 	window.ConfigManager = NewConfigManager(window)
 	window.AutoLoad = cfg.AutoLoad ~= false
@@ -4171,8 +5082,8 @@ function NexCat:CreateWindow(cfg)
 	Corner(main, radius)
 	Stroke(main, "Outline", 1, 0.9)
 	window.Frame = main
-	window._scale = New("UIScale", { Scale = 0.9, Parent = main })
-	Tween(window._scale, { Scale = 1 }, 0.3, Enum.EasingStyle.Back)
+	window._scale = New("UIScale", { Scale = window._baseScale * 0.9, Parent = main })
+	Tween(window._scale, { Scale = window._baseScale }, 0.3, Enum.EasingStyle.Back)
 
 	-- ---------- Topbar ----------
 	local top = New("Frame", {
@@ -4436,11 +5347,9 @@ function NexCat:CreateWindow(cfg)
 			Theme = { TextColor3 = "Text", PlaceholderColor3 = "Placeholder" },
 			Parent = searchHolder,
 		})
+		window._searchBox = searchBox
 		searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-			local q = searchBox.Text:lower()
-			for _, tab in ipairs(window.Tabs) do
-				tab.Button.Visible = q == "" or tab.Title:lower():find(q, 1, true) ~= nil
-			end
+			window:Search(searchBox.Text)
 		end)
 	end
 
@@ -4623,6 +5532,10 @@ function NexCat:CreateWindow(cfg)
 
 	NexCat.Windows[#NexCat.Windows + 1] = window
 	return window
+end
+
+function NexCat:GetVersion()
+	return self.Version
 end
 
 function NexCat:Destroy()
