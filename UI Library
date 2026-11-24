@@ -1,12 +1,27 @@
 --[[
-	NekoUI v1.0.0
-	Library UI Roblox (Luau) dengan API ala WindUI:
-	Window, Tab, Section, Button, Toggle, Slider, Input, Dropdown, Keybind,
-	Colorpicker, Paragraph, Divider, Dialog, Notify, Theme, ConfigManager.
+	NexCat v1.0.0
+	Library UI Roblox (Luau) dengan tampilan & API ala WindUI.
+
+	Window, Tab, Section, Button, Toggle (Switch/Checkbox), Slider, Input, Dropdown,
+	Keybind, Colorpicker, Paragraph, Code, Divider, Space, Dialog, Popup, Notify,
+	Tag, Topbar Button, Theme, ConfigManager.
 
 	Cara pakai:
-		local NekoUI = loadstring(readfile("NekoUI.lua"))()   -- executor
-		local NekoUI = require(path.to.NekoUI)                -- Roblox Studio (ModuleScript)
+		local NexCat = loadstring(readfile("NexCat.lua"))()   -- executor
+		local NexCat = require(path.to.NexCat)                -- Roblox Studio (ModuleScript)
+
+		local Window = NexCat:CreateWindow({
+			Title = "NexCat",
+			Author = "by kamu",
+			Folder = "nexcat",
+			Topbar = { Height = 52, ButtonsType = "Default" }, -- atau "Mac"
+		})
+		local Tab = Window:Tab({ Title = "Main", Icon = "home" })
+		Tab:Toggle({ Title = "Auto Farm", Callback = function(v) print(v) end })
+
+	Icon logo kucing disimpan sebagai base64 di bawah (LOGO_BASE64). Di executor yang punya
+	writefile + getcustomasset, logo otomatis ditulis jadi PNG lalu dipakai sebagai gambar.
+	Kalau tidak tersedia (misal Roblox Studio), otomatis pakai emoji sebagai cadangan.
 ]]
 
 local Players = game:GetService("Players")
@@ -21,9 +36,16 @@ end)
 
 local LocalPlayer = Players.LocalPlayer
 
-local NekoUI = {
+local NexCat = {
 	Version = "1.0.0",
 	Windows = {},
+	TransparencyValue = 0.2,
+	Fonts = {
+		Regular = Enum.Font.BuilderSans,
+		Medium = Enum.Font.BuilderSansMedium,
+		Bold = Enum.Font.BuilderSansBold,
+	},
+	Creator = {},
 }
 
 local Container = {}
@@ -39,122 +61,246 @@ local ConfigClass = {}
 ConfigClass.__index = ConfigClass
 
 -- ============================================================
--- Theme
+-- Logo NexCat (PNG 128x128, putih transparan, di-encode base64)
+-- Putih supaya bisa di-tint mengikuti warna tema.
 -- ============================================================
 
-local function rgb(r, g, b)
-	return Color3.fromRGB(r, g, b)
+local LOGO_BASE64 = [[
+__LOGO_B64__
+]]
+
+-- ============================================================
+-- Base64 decoder + loader gambar (base64 -> file -> asset)
+-- ============================================================
+
+local AssetFolder = "NexCat/assets"
+
+local Base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+local Base64Lookup = {}
+for i = 1, #Base64Chars do
+	Base64Lookup[Base64Chars:byte(i)] = i - 1
 end
 
-NekoUI.Themes = {
-	Dark = {
-		Background = rgb(17, 17, 21),
-		Surface = rgb(24, 24, 30),
-		Element = rgb(29, 29, 36),
-		ElementHover = rgb(39, 39, 48),
-		Stroke = rgb(52, 52, 64),
-		Accent = rgb(112, 102, 255),
-		AccentText = rgb(255, 255, 255),
-		Text = rgb(240, 240, 246),
-		SubText = rgb(150, 150, 168),
-		ToggleOff = rgb(62, 62, 76),
-		Success = rgb(52, 211, 153),
-		Warning = rgb(251, 191, 36),
-		Danger = rgb(248, 81, 81),
-	},
-	Light = {
-		Background = rgb(244, 245, 249),
-		Surface = rgb(255, 255, 255),
-		Element = rgb(255, 255, 255),
-		ElementHover = rgb(236, 238, 245),
-		Stroke = rgb(218, 221, 232),
-		Accent = rgb(79, 70, 229),
-		AccentText = rgb(255, 255, 255),
-		Text = rgb(24, 24, 34),
-		SubText = rgb(104, 108, 126),
-		ToggleOff = rgb(198, 202, 216),
-		Success = rgb(16, 160, 110),
-		Warning = rgb(217, 140, 6),
-		Danger = rgb(220, 53, 69),
-	},
-	Midnight = {
-		Background = rgb(9, 11, 24),
-		Surface = rgb(15, 18, 36),
-		Element = rgb(19, 23, 46),
-		ElementHover = rgb(28, 33, 64),
-		Stroke = rgb(40, 47, 84),
-		Accent = rgb(139, 109, 255),
-		AccentText = rgb(255, 255, 255),
-		Text = rgb(232, 235, 255),
-		SubText = rgb(135, 142, 186),
-		ToggleOff = rgb(48, 55, 95),
-	},
-	Rose = {
-		Background = rgb(22, 14, 18),
-		Surface = rgb(31, 20, 26),
-		Element = rgb(38, 25, 32),
-		ElementHover = rgb(52, 34, 43),
-		Stroke = rgb(68, 45, 56),
-		Accent = rgb(244, 63, 94),
-		AccentText = rgb(255, 255, 255),
-		Text = rgb(250, 238, 242),
-		SubText = rgb(176, 146, 158),
-		ToggleOff = rgb(78, 52, 64),
-	},
-	Aqua = {
-		Background = rgb(10, 19, 23),
-		Surface = rgb(15, 27, 33),
-		Element = rgb(19, 34, 41),
-		ElementHover = rgb(27, 47, 56),
-		Stroke = rgb(37, 62, 73),
-		Accent = rgb(34, 211, 238),
-		AccentText = rgb(6, 24, 30),
-		Text = rgb(230, 247, 251),
-		SubText = rgb(132, 170, 182),
-		ToggleOff = rgb(44, 72, 84),
-	},
-	-- hitam putih, nyambung sama logo kucing
-	Neko = {
-		Background = rgb(0, 0, 0),
-		Surface = rgb(10, 10, 10),
-		Element = rgb(15, 15, 15),
-		ElementHover = rgb(26, 26, 26),
-		Stroke = rgb(58, 58, 58),
-		Accent = rgb(245, 245, 245),
-		AccentText = rgb(0, 0, 0),
-		Text = rgb(255, 255, 255),
-		SubText = rgb(158, 158, 158),
-		ToggleOff = rgb(52, 52, 52),
-	},
-}
+local function Base64Decode(data)
+	data = tostring(data):gsub("^data:[^,]*,", ""):gsub("[^%w%+/=]", "")
+	local padding = 0
+	if data:sub(-2) == "==" then
+		padding = 2
+	elseif data:sub(-1) == "=" then
+		padding = 1
+	end
+	data = data:gsub("=", "A")
+	local out, count = {}, 0
+	for i = 1, #data, 4 do
+		local a = Base64Lookup[data:byte(i)] or 0
+		local b = Base64Lookup[data:byte(i + 1)] or 0
+		local c = Base64Lookup[data:byte(i + 2)] or 0
+		local d = Base64Lookup[data:byte(i + 3)] or 0
+		local n = a * 262144 + b * 4096 + c * 64 + d
+		count = count + 1
+		out[count] = string.char(math.floor(n / 65536) % 256, math.floor(n / 256) % 256, n % 256)
+	end
+	local result = table.concat(out)
+	if padding > 0 then
+		result = result:sub(1, #result - padding)
+	end
+	return result
+end
 
--- theme yang tidak lengkap otomatis diisi dari Dark
-for name, theme in pairs(NekoUI.Themes) do
-	if name ~= "Dark" then
-		for key, value in pairs(NekoUI.Themes.Dark) do
-			if theme[key] == nil then
-				theme[key] = value
+local function FSAvailable()
+	return type(writefile) == "function" and type(readfile) == "function" and type(isfile) == "function"
+end
+
+local function EnsureFolder(path)
+	if type(isfolder) == "function" and type(makefolder) == "function" then
+		local built = ""
+		for part in path:gmatch("[^/\\]+") do
+			built = built == "" and part or (built .. "/" .. part)
+			if not isfolder(built) then
+				pcall(makefolder, built)
 			end
 		end
 	end
 end
 
-NekoUI.Theme = NekoUI.Themes.Dark
-NekoUI.ThemeName = "Dark"
+local AssetCache = {}
 
--- Icon bawaan (emoji). Mau icon sendiri? pakai "rbxassetid://123" atau NekoUI:AddIcon(nama, isi)
-NekoUI.Icons = {
-	cat = "🐱", home = "🏠", settings = "⚙️", user = "👤", users = "👥", sword = "⚔️",
-	eye = "👁", star = "⭐", bell = "🔔", info = "ℹ️", check = "✅", warning = "⚠️",
-	error = "⛔", search = "🔍", map = "🗺", shield = "🛡", zap = "⚡", palette = "🎨",
-	bug = "🐞", folder = "📁", lock = "🔒", unlock = "🔓", globe = "🌐", heart = "❤️",
-	code = "💻", rocket = "🚀", wrench = "🔧", target = "🎯", gift = "🎁", fire = "🔥",
-	key = "🔑", save = "💾", music = "🎵", game = "🎮", car = "🚗", money = "💰",
-	crown = "👑", flag = "🚩", clock = "⏰", chat = "💬", trash = "🗑", sparkles = "✨",
+-- tulis PNG dari base64 ke file lalu ambil asset-nya. return nil kalau environment tidak mendukung.
+local function LoadBase64Image(name, base64)
+	if AssetCache[name] ~= nil then
+		return AssetCache[name] or nil
+	end
+	local getAsset
+	if type(getcustomasset) == "function" then
+		getAsset = getcustomasset
+	elseif type(getsynasset) == "function" then
+		getAsset = getsynasset
+	end
+	if not getAsset or not FSAvailable() then
+		AssetCache[name] = false
+		return nil
+	end
+	local ok, result = pcall(function()
+		EnsureFolder(AssetFolder)
+		local safe = tostring(name):gsub("[^%w_%-]", "_")
+		local path = AssetFolder .. "/" .. safe .. "_" .. #base64 .. ".png"
+		if not isfile(path) then
+			writefile(path, Base64Decode(base64))
+		end
+		return getAsset(path)
+	end)
+	if ok and result and result ~= "" then
+		AssetCache[name] = result
+		return result
+	end
+	AssetCache[name] = false
+	return nil
+end
+
+-- ============================================================
+-- Theme (nama key mengikuti WindUI)
+-- Accent, Dialog, Outline, Text, Placeholder, Background, Button, Icon
+-- tambahan: Toggle, KnobOn, Success, Warning, Danger, White
+-- ============================================================
+
+local function Hex(value)
+	return Color3.fromHex(value)
+end
+
+-- isi key yang belum ada supaya theme buatan sendiri tidak bolong
+local function Complete(theme)
+	local background = theme.Background or Hex("#101010")
+	local text = theme.Text or Hex("#FFFFFF")
+	theme.Background = background
+	theme.Text = text
+	theme.Outline = theme.Outline or text
+	theme.Dialog = theme.Dialog or background:Lerp(text, 0.04)
+	theme.Accent = theme.Accent or background:Lerp(text, 0.08)
+	theme.Placeholder = theme.Placeholder or text:Lerp(background, 0.5)
+	theme.Button = theme.Button or background:Lerp(text, 0.25)
+	theme.Icon = theme.Icon or text:Lerp(background, 0.35)
+	theme.Toggle = theme.Toggle or Hex("#315dff")
+	theme.KnobOn = theme.KnobOn or Hex("#FFFFFF")
+	theme.Success = theme.Success or Hex("#34d399")
+	theme.Warning = theme.Warning or Hex("#fbbf24")
+	theme.Danger = theme.Danger or Hex("#f85151")
+	theme.White = Hex("#FFFFFF")
+	return theme
+end
+
+NexCat.Themes = {
+	-- Dark & Light: palet default WindUI. Sisanya palet buatan sendiri.
+	Dark = {
+		Accent = Hex("#18181b"), Dialog = Hex("#161616"), Outline = Hex("#FFFFFF"), Text = Hex("#FFFFFF"),
+		Placeholder = Hex("#7a7a7a"), Background = Hex("#101010"), Button = Hex("#52525b"), Icon = Hex("#a1a1aa"),
+	},
+	Light = {
+		Accent = Hex("#FFFFFF"), Dialog = Hex("#f4f4f5"), Outline = Hex("#09090b"), Text = Hex("#000000"),
+		Placeholder = Hex("#555555"), Background = Hex("#e4e4e7"), Button = Hex("#18181b"), Icon = Hex("#52525b"),
+	},
+	Rose = {
+		Accent = Hex("#4c0519"), Dialog = Hex("#240c14"), Outline = Hex("#fda4af"), Text = Hex("#ffe4e6"),
+		Placeholder = Hex("#9f6b76"), Background = Hex("#1c0a10"), Button = Hex("#be123c"), Icon = Hex("#fb7185"),
+		Toggle = Hex("#f43f5e"),
+	},
+	Plant = {
+		Accent = Hex("#052e16"), Dialog = Hex("#0f2216"), Outline = Hex("#86efac"), Text = Hex("#dcfce7"),
+		Placeholder = Hex("#5f8f6f"), Background = Hex("#0b1a10"), Button = Hex("#15803d"), Icon = Hex("#4ade80"),
+		Toggle = Hex("#22c55e"),
+	},
+	Red = {
+		Accent = Hex("#450a0a"), Dialog = Hex("#220f0f"), Outline = Hex("#fca5a5"), Text = Hex("#fee2e2"),
+		Placeholder = Hex("#9a6767"), Background = Hex("#1a0b0b"), Button = Hex("#b91c1c"), Icon = Hex("#f87171"),
+		Toggle = Hex("#ef4444"),
+	},
+	Indigo = {
+		Accent = Hex("#1e1b4b"), Dialog = Hex("#12152e"), Outline = Hex("#a5b4fc"), Text = Hex("#e0e7ff"),
+		Placeholder = Hex("#7078b0"), Background = Hex("#0d0f24"), Button = Hex("#4338ca"), Icon = Hex("#818cf8"),
+		Toggle = Hex("#6366f1"),
+	},
+	Sky = {
+		Accent = Hex("#082f49"), Dialog = Hex("#0b1e2a"), Outline = Hex("#7dd3fc"), Text = Hex("#e0f2fe"),
+		Placeholder = Hex("#5f8aa3"), Background = Hex("#07161f"), Button = Hex("#0369a1"), Icon = Hex("#38bdf8"),
+		Toggle = Hex("#0ea5e9"),
+	},
+	Violet = {
+		Accent = Hex("#2e1065"), Dialog = Hex("#1b0e2a"), Outline = Hex("#c4b5fd"), Text = Hex("#ede9fe"),
+		Placeholder = Hex("#8b78b3"), Background = Hex("#14091f"), Button = Hex("#6d28d9"), Icon = Hex("#a78bfa"),
+		Toggle = Hex("#8b5cf6"),
+	},
+	Amber = {
+		Accent = Hex("#451a03"), Dialog = Hex("#221808"), Outline = Hex("#fcd34d"), Text = Hex("#fef3c7"),
+		Placeholder = Hex("#a08a55"), Background = Hex("#1a1206"), Button = Hex("#b45309"), Icon = Hex("#fbbf24"),
+		Toggle = Hex("#f59e0b"),
+	},
+	Emerald = {
+		Accent = Hex("#022c22"), Dialog = Hex("#0a231b"), Outline = Hex("#6ee7b7"), Text = Hex("#d1fae5"),
+		Placeholder = Hex("#5b8f7d"), Background = Hex("#061a14"), Button = Hex("#047857"), Icon = Hex("#34d399"),
+		Toggle = Hex("#10b981"),
+	},
+	Midnight = {
+		Accent = Hex("#13172e"), Dialog = Hex("#0f1224"), Outline = Hex("#8b6dff"), Text = Hex("#e8ebff"),
+		Placeholder = Hex("#878eba"), Background = Hex("#090b18"), Button = Hex("#30375f"), Icon = Hex("#878eba"),
+		Toggle = Hex("#8b6dff"),
+	},
+	Aqua = {
+		Accent = Hex("#132229"), Dialog = Hex("#0f1b21"), Outline = Hex("#22d3ee"), Text = Hex("#e6f7fb"),
+		Placeholder = Hex("#84aab6"), Background = Hex("#0a1317"), Button = Hex("#2c4854"), Icon = Hex("#84aab6"),
+		Toggle = Hex("#22d3ee"),
+	},
+	-- hitam putih, nyambung sama logo kucing
+	NexCat = {
+		Accent = Hex("#1a1a1a"), Dialog = Hex("#0a0a0a"), Outline = Hex("#FFFFFF"), Text = Hex("#FFFFFF"),
+		Placeholder = Hex("#9e9e9e"), Background = Hex("#000000"), Button = Hex("#343434"), Icon = Hex("#bdbdbd"),
+		Toggle = Hex("#f5f5f5"), KnobOn = Hex("#000000"),
+	},
 }
 
-function NekoUI:AddIcon(name, value)
+for name, theme in pairs(NexCat.Themes) do
+	theme.Name = name
+	Complete(theme)
+end
+
+NexCat.Theme = NexCat.Themes.Dark
+NexCat.ThemeName = "Dark"
+
+-- ============================================================
+-- Icon
+-- Nama icon bisa: key di NexCat.Icons, "lucide:nama", "rbxassetid://123", angka, atau teks/emoji langsung.
+-- ============================================================
+
+NexCat.Icons = {
+	nexcat = { Base64 = LOGO_BASE64, Fallback = "🐱", Tint = true },
+	home = "🏠", house = "🏠", settings = "⚙️", user = "👤", users = "👥", sword = "⚔️", swords = "⚔️",
+	eye = "👁", star = "⭐", bell = "🔔", info = "ℹ️", check = "✅", warning = "⚠️", ["triangle-alert"] = "⚠️",
+	error = "⛔", x = "✖️", search = "🔍", map = "🗺", shield = "🛡", zap = "⚡", palette = "🎨", brush = "🎨",
+	bug = "🐞", folder = "📁", lock = "🔒", unlock = "🔓", ["lock-open"] = "🔓", globe = "🌐", heart = "❤️",
+	code = "💻", rocket = "🚀", wrench = "🔧", target = "🎯", gift = "🎁", fire = "🔥", flame = "🔥",
+	key = "🔑", save = "💾", music = "🎵", game = "🎮", ["gamepad-2"] = "🎮", car = "🚗", money = "💰",
+	coins = "💰", crown = "👑", flag = "🚩", clock = "⏰", chat = "💬", ["message-circle"] = "💬",
+	trash = "🗑", ["trash-2"] = "🗑", sparkles = "✨", moon = "🌙", sun = "☀️", monitor = "🖥",
+	["layout-grid"] = "▦", ["mouse-pointer-click"] = "🖱", bird = "🐦", github = "🐙", pointer = "🖱",
+	paw = "🐾", fish = "🐟",
+}
+NexCat.Icons.cat = NexCat.Icons.nexcat
+
+function NexCat:AddIcon(name, value)
 	self.Icons[name] = value
+end
+
+-- daftarkan icon dari base64 PNG. tint = true -> warnanya ikut tema (pakai PNG putih transparan)
+function NexCat:AddIconBase64(name, base64, tint, fallback)
+	self.Icons[name] = { Base64 = base64, Tint = tint ~= false, Fallback = fallback or "?" }
+end
+
+-- kompatibel dengan WindUI.Creator.AddIcons("pack", { nama = icon })
+function NexCat.Creator.AddIcons(pack, icons)
+	for name, value in pairs(icons or {}) do
+		NexCat.Icons[pack .. ":" .. name] = value
+		if NexCat.Icons[name] == nil then
+			NexCat.Icons[name] = value
+		end
+	end
 end
 
 -- ============================================================
@@ -162,6 +308,10 @@ end
 -- ============================================================
 
 local Bound = {}
+
+local ElementTransparency = 0.94
+local ElementHoverTransparency = 0.9
+local PanelTransparency = 0.965
 
 local function Tween(inst, props, duration, style, direction)
 	local tween = TweenService:Create(
@@ -175,9 +325,9 @@ end
 
 local function Resolve(source)
 	if type(source) == "function" then
-		return source(NekoUI.Theme)
+		return source(NexCat.Theme)
 	end
-	return NekoUI.Theme[source]
+	return NexCat.Theme[source]
 end
 
 -- ikat properti ke theme: source = nama key theme atau function(theme) -> nilai
@@ -218,7 +368,7 @@ local function Stroke(parent, source, thickness, transparency)
 		Thickness = thickness or 1,
 		Transparency = transparency or 0,
 		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		Theme = { Color = source or "Stroke" },
+		Theme = { Color = source or "Outline" },
 		Parent = parent,
 	})
 end
@@ -247,12 +397,30 @@ local function List(parent, padding, direction, hAlign, vAlign)
 	})
 end
 
+local function FontOf(weight)
+	return NexCat.Fonts[weight or "Regular"] or NexCat.Fonts.Regular
+end
+
+local function ToEnum(enumType, name, default)
+	if typeof(name) == "EnumItem" then
+		return name
+	end
+	local ok, item = pcall(function()
+		return enumType[name]
+	end)
+	if ok and item then
+		return item
+	end
+	return default
+end
+
+-- props.Weight = "Regular" | "Medium" | "Bold"
 local function Text(parent, text, props)
 	local p = {
 		BackgroundTransparency = 1,
 		Text = text or "",
-		Font = Enum.Font.GothamMedium,
-		TextSize = 14,
+		Font = FontOf("Medium"),
+		TextSize = 15,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Center,
 		Theme = { TextColor3 = "Text" },
@@ -260,39 +428,167 @@ local function Text(parent, text, props)
 	}
 	if props then
 		for key, value in pairs(props) do
-			p[key] = value
+			if key == "Weight" then
+				p.Font = FontOf(value)
+			else
+				p[key] = value
+			end
 		end
 	end
 	return New("TextLabel", p)
 end
 
-local function MakeIcon(parent, icon, size, tintSource)
+local function IsAsset(value)
+	return type(value) == "string"
+		and (value:find("^rbxassetid://") ~= nil or value:find("^rbxasset://") ~= nil or value:find("^rbxthumb://") ~= nil)
+end
+
+-- return: nilai (asset / teks), apakah boleh di-tint mengikuti tema
+local function ResolveIcon(icon)
 	if icon == nil or icon == "" then
 		return nil
 	end
-	icon = NekoUI.Icons[icon] or icon
-	size = size or 18
 	if type(icon) == "number" then
-		icon = "rbxassetid://" .. icon
+		return "rbxassetid://" .. icon, false
 	end
-	if type(icon) == "string" and (icon:find("^rbxassetid://") or icon:find("^rbxasset://")) then
-		return New("ImageLabel", {
+	if type(icon) ~= "string" then
+		return tostring(icon), false
+	end
+	if IsAsset(icon) then
+		return icon, false
+	end
+	if icon:find("^data:image") or icon:find("^base64:") then
+		local name = "inline_" .. #icon
+		if NexCat.Icons[name] == nil then
+			NexCat.Icons[name] = { Base64 = icon:gsub("^base64:", ""), Tint = false, Fallback = "?" }
+		end
+		icon = name
+	end
+
+	local key = icon
+	local entry = NexCat.Icons[key]
+	if entry == nil then
+		local stripped = key:match("^%a+:(.+)$")
+		if stripped then
+			key = stripped
+			entry = NexCat.Icons[key]
+		end
+	end
+	if entry == nil then
+		local normalized = key:lower()
+		normalized = normalized:gsub("_", "-")
+		entry = NexCat.Icons[normalized]
+	end
+
+	if type(entry) == "table" then
+		local asset = entry.Base64 and LoadBase64Image(key, entry.Base64)
+		if asset then
+			return asset, entry.Tint ~= false
+		end
+		return entry.Fallback or "?", false
+	end
+	if type(entry) == "number" then
+		return "rbxassetid://" .. entry, false
+	end
+	if entry ~= nil then
+		return entry, false
+	end
+	return key, false
+end
+
+-- themed = true -> gambar user (rbxassetid) juga di-tint
+local function MakeIcon(parent, icon, size, tintSource, themed)
+	local resolved, tintable = ResolveIcon(icon)
+	if resolved == nil then
+		return nil
+	end
+	size = size or 18
+	if IsAsset(resolved) then
+		local props = {
 			BackgroundTransparency = 1,
-			Image = icon,
+			Image = resolved,
 			Size = UDim2.fromOffset(size, size),
-			Theme = tintSource and { ImageColor3 = tintSource } or nil,
 			Parent = parent,
-		})
+		}
+		if tintSource and (tintable or themed) then
+			props.Theme = { ImageColor3 = tintSource }
+		end
+		return New("ImageLabel", props)
 	end
 	return New("TextLabel", {
 		BackgroundTransparency = 1,
-		Text = tostring(icon),
-		TextSize = size - 3,
-		Font = Enum.Font.GothamBold,
+		Text = tostring(resolved),
+		TextSize = math.max(size - 3, 8),
+		Font = FontOf("Bold"),
 		Size = UDim2.fromOffset(size, size),
 		Theme = { TextColor3 = tintSource or "Text" },
 		Parent = parent,
 	})
+end
+
+local function IconAlpha(icon, alpha, duration)
+	if not icon then
+		return
+	end
+	local prop = icon:IsA("ImageLabel") and "ImageTransparency" or "TextTransparency"
+	if duration then
+		Tween(icon, { [prop] = alpha }, duration)
+	else
+		icon[prop] = alpha
+	end
+end
+
+-- ikon X (dua garis menyilang)
+local function CloseGlyph(parent, length, source)
+	local holder = New("Frame", {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(length, length),
+		Parent = parent,
+	})
+	for _, rotation in ipairs({ 45, -45 }) do
+		local bar = New("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(length, 2),
+			Rotation = rotation,
+			BorderSizePixel = 0,
+			Theme = { BackgroundColor3 = source or "Icon" },
+			Parent = holder,
+		})
+		Corner(bar, 1)
+	end
+	return holder
+end
+
+-- ikon kaca pembesar
+local function SearchGlyph(parent, source)
+	local holder = New("Frame", {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 11, 0.5, 0),
+		Size = UDim2.fromOffset(14, 14),
+		Parent = parent,
+	})
+	local circle = New("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(10, 10),
+		Parent = holder,
+	})
+	Corner(circle, 5)
+	Stroke(circle, source or "Icon", 1.6, 0)
+	local handle = New("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromOffset(11.5, 11.5),
+		Size = UDim2.fromOffset(5, 1.6),
+		Rotation = 45,
+		BorderSizePixel = 0,
+		Theme = { BackgroundColor3 = source or "Icon" },
+		Parent = holder,
+	})
+	Corner(handle, 1)
+	return holder
 end
 
 local function NextOrder(parent)
@@ -307,7 +603,7 @@ local function Fire(callback, ...)
 	end
 	local ok, err = pcall(callback, ...)
 	if not ok then
-		warn("[NekoUI] Callback error: " .. tostring(err))
+		warn("[NexCat] Callback error: " .. tostring(err))
 	end
 end
 
@@ -356,7 +652,12 @@ end
 
 local function MountGui(gui)
 	local mounted = false
-	if type(gethui) == "function" then
+	if NexCat._parent then
+		mounted = pcall(function()
+			gui.Parent = NexCat._parent
+		end) and gui.Parent ~= nil
+	end
+	if not mounted and type(gethui) == "function" then
 		mounted = pcall(function()
 			gui.Parent = gethui()
 		end) and gui.Parent ~= nil
@@ -388,11 +689,15 @@ local function ViewportSize()
 	return camera and camera.ViewportSize or Vector2.new(1280, 720)
 end
 
+local function Luminance(color)
+	return 0.2126 * color.R + 0.7152 * color.G + 0.0722 * color.B
+end
+
 -- ============================================================
--- Theme API
+-- Global API (theme, font, parent)
 -- ============================================================
 
-function NekoUI:SetTheme(name)
+function NexCat:SetTheme(name)
 	local theme = self.Themes[name]
 	if not theme then
 		return false
@@ -411,7 +716,12 @@ function NekoUI:SetTheme(name)
 	return true
 end
 
-function NekoUI:GetThemes()
+-- sama seperti WindUI: key = nama theme. Cocok untuk `for name in pairs(NexCat:GetThemes())`
+function NexCat:GetThemes()
+	return self.Themes
+end
+
+function NexCat:GetThemeNames()
 	local names = {}
 	for name in pairs(self.Themes) do
 		names[#names + 1] = name
@@ -420,7 +730,23 @@ function NekoUI:GetThemes()
 	return names
 end
 
-function NekoUI:AddTheme(name, theme)
+function NexCat:GetCurrentTheme()
+	return self.ThemeName
+end
+
+-- NexCat:AddTheme({ Name = "X", Accent = ..., ... })  atau  NexCat:AddTheme("X", { ... })
+function NexCat:AddTheme(nameOrTheme, maybeTheme)
+	local name, theme
+	if type(nameOrTheme) == "table" then
+		theme = nameOrTheme
+		name = theme.Name
+	else
+		name = nameOrTheme
+		theme = maybeTheme
+	end
+	if type(name) ~= "string" or type(theme) ~= "table" then
+		return false
+	end
 	local merged = {}
 	for key, value in pairs(self.Themes.Dark) do
 		merged[key] = value
@@ -428,19 +754,45 @@ function NekoUI:AddTheme(name, theme)
 	for key, value in pairs(theme) do
 		merged[key] = value
 	end
-	self.Themes[name] = merged
+	merged.Name = name
+	self.Themes[name] = Complete(merged)
+	return true
+end
+
+function NexCat:SetFont(regular, medium, bold)
+	if regular then
+		self.Fonts.Regular = regular
+	end
+	self.Fonts.Medium = medium or regular or self.Fonts.Medium
+	self.Fonts.Bold = bold or medium or regular or self.Fonts.Bold
+end
+
+function NexCat:SetParent(parent)
+	self._parent = parent
+end
+
+function NexCat:GetTransparency()
+	return self.Windows[1] ~= nil and self.Windows[1].Transparent == true
+end
+
+function NexCat:GetWindowSize()
+	local window = self.Windows[1]
+	if window and window.Frame then
+		return window.Frame.AbsoluteSize
+	end
+	return Vector2.new(0, 0)
 end
 
 -- ============================================================
 -- Notifikasi
 -- ============================================================
 
-function NekoUI:_NotifyHolder()
+function NexCat:_NotifyHolder()
 	if self._notifGui and self._notifGui.Parent then
 		return self._notifHolder
 	end
-	local gui = NewGui("NekoUI_Notify", 1000)
-	local width = math.min(310, ViewportSize().X - 32)
+	local gui = NewGui("NexCat_Notify", 1000)
+	local width = math.min(320, ViewportSize().X - 32)
 	local holder = New("Frame", {
 		Name = "Holder",
 		AnchorPoint = Vector2.new(1, 1),
@@ -456,17 +808,19 @@ function NekoUI:_NotifyHolder()
 end
 
 local NotifyTypes = {
-	Info = { color = "Accent", icon = "info" },
+	Info = { color = "Text", icon = "info" },
 	Success = { color = "Success", icon = "check" },
 	Warning = { color = "Warning", icon = "warning" },
 	Error = { color = "Danger", icon = "error" },
 }
 
-function NekoUI:Notify(cfg)
+-- cfg: Title, Content, Icon, Duration, CanClose, Type ("Info" | "Success" | "Warning" | "Error")
+function NexCat:Notify(cfg)
 	cfg = cfg or {}
 	local holder = self:_NotifyHolder()
-	local kind = NotifyTypes[cfg.Type or "Info"] or NotifyTypes.Info
-	local duration = cfg.Duration or 4
+	local kind = cfg.Type and (NotifyTypes[cfg.Type] or NotifyTypes.Info) or nil
+	local duration = cfg.Duration or 5
+	local canClose = cfg.CanClose ~= false
 
 	local card = New("CanvasGroup", {
 		Name = "Notification",
@@ -474,20 +828,12 @@ function NekoUI:Notify(cfg)
 		AutomaticSize = Enum.AutomaticSize.Y,
 		GroupTransparency = 1,
 		LayoutOrder = NextOrder(holder),
-		Theme = { BackgroundColor3 = "Surface" },
+		Theme = { BackgroundColor3 = "Dialog" },
 		Parent = holder,
 	})
-	Corner(card, 10)
-	Stroke(card, "Stroke", 1, 0.2)
+	Corner(card, 14)
+	Stroke(card, "Outline", 1, 0.88)
 	local scale = New("UIScale", { Scale = 0.92, Parent = card })
-
-	New("Frame", {
-		Name = "Accent",
-		Size = UDim2.new(0, 3, 1, 0),
-		BorderSizePixel = 0,
-		Theme = { BackgroundColor3 = kind.color },
-		Parent = card,
-	})
 
 	local inner = New("Frame", {
 		BackgroundTransparency = 1,
@@ -495,23 +841,23 @@ function NekoUI:Notify(cfg)
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Parent = card,
 	})
-	Pad(inner, 12, 14, 14, 18)
-	List(inner, 5)
+	Pad(inner, 14, 14, 16, 14)
+	List(inner, 6)
 
 	local head = New("Frame", {
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 20),
+		Size = UDim2.new(1, 0, 0, 22),
 		LayoutOrder = 1,
 		Parent = inner,
 	})
 	List(head, 8, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
-	local icon = MakeIcon(head, cfg.Icon or kind.icon, 18)
+	local icon = MakeIcon(head, cfg.Icon or (kind and kind.icon), 20, kind and kind.color or "Icon")
 	if icon then
 		icon.LayoutOrder = 1
 	end
 	Text(head, cfg.Title or "Notification", {
-		Size = UDim2.new(1, icon and -26 or 0, 1, 0),
-		Font = Enum.Font.GothamBold,
+		Size = UDim2.new(1, -((icon and 28 or 0) + (canClose and 26 or 0)), 1, 0),
+		TextSize = 16,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 		LayoutOrder = 2,
 	})
@@ -522,11 +868,11 @@ function NekoUI:Notify(cfg)
 			AutomaticSize = Enum.AutomaticSize.Y,
 			TextWrapped = true,
 			TextYAlignment = Enum.TextYAlignment.Top,
-			Font = Enum.Font.Gotham,
-			TextSize = 13,
+			Weight = "Regular",
+			TextSize = 14,
 			RichText = true,
+			TextTransparency = 0.4,
 			LayoutOrder = 2,
-			Theme = { TextColor3 = "SubText" },
 		})
 	end
 
@@ -536,10 +882,10 @@ function NekoUI:Notify(cfg)
 			Name = "Progress",
 			AnchorPoint = Vector2.new(0, 1),
 			Position = UDim2.fromScale(0, 1),
-			Size = UDim2.new(1, 0, 0, 2),
+			Size = UDim2.new(1, 0, 0, 3),
 			BorderSizePixel = 0,
-			BackgroundTransparency = 0.4,
-			Theme = { BackgroundColor3 = kind.color },
+			BackgroundTransparency = 0.55,
+			Theme = { BackgroundColor3 = kind and kind.color or "Text" },
 			Parent = card,
 		})
 	end
@@ -558,22 +904,28 @@ function NekoUI:Notify(cfg)
 		end)
 	end
 
-	local hit = New("TextButton", {
-		Name = "Dismiss",
-		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		Text = "",
-		ZIndex = 5,
-		Parent = card,
-	})
-	hit.MouseButton1Click:Connect(function()
-		object:Close()
-	end)
+	if canClose then
+		local closeButton = New("TextButton", {
+			Name = "Close",
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -10, 0, 14),
+			Size = UDim2.fromOffset(22, 22),
+			BackgroundTransparency = 1,
+			Text = "",
+			AutoButtonColor = false,
+			ZIndex = 5,
+			Parent = card,
+		})
+		CloseGlyph(closeButton, 10, "Icon")
+		closeButton.MouseButton1Click:Connect(function()
+			object:Close()
+		end)
+	end
 
 	Tween(card, { GroupTransparency = 0 }, 0.25)
 	Tween(scale, { Scale = 1 }, 0.3, Enum.EasingStyle.Back)
 	if bar then
-		Tween(bar, { Size = UDim2.new(0, 0, 0, 2) }, duration, Enum.EasingStyle.Linear)
+		Tween(bar, { Size = UDim2.new(0, 0, 0, 3) }, duration, Enum.EasingStyle.Linear)
 		task.delay(duration, function()
 			object:Close()
 		end)
@@ -610,22 +962,6 @@ local function Decode(value)
 		end
 	end
 	return value
-end
-
-local function FSAvailable()
-	return type(writefile) == "function" and type(readfile) == "function" and type(isfile) == "function"
-end
-
-local function EnsureFolder(path)
-	if type(isfolder) == "function" and type(makefolder) == "function" then
-		local built = ""
-		for part in path:gmatch("[^/\\]+") do
-			built = built == "" and part or (built .. "/" .. part)
-			if not isfolder(built) then
-				pcall(makefolder, built)
-			end
-		end
-	end
 end
 
 function ConfigClass:Register(flag, element)
@@ -744,23 +1080,241 @@ local function NewConfigManager(window)
 end
 
 -- ============================================================
--- Popup & Dialog (method Window)
+-- Tombol varian (Primary / Secondary / Tertiary / Danger)
+-- dipakai Dialog, Popup, dan tombol di Paragraph
 -- ============================================================
 
-function WindowClass:_Surface(inst, amount)
-	self._surfaces[#self._surfaces + 1] = { inst, amount }
-	if self.Transparent then
-		inst.BackgroundTransparency = amount
+local Variants = {
+	Primary = { bg = "Text", base = 0, hover = 0.12, fg = "Dialog" },
+	Secondary = { bg = "Text", base = 0.9, hover = 0.84, fg = "Text" },
+	Tertiary = { bg = "Text", base = 1, hover = 0.94, fg = "Text", stroke = true },
+	Danger = { bg = "Danger", base = 0, hover = 0.12, fg = "White" },
+}
+
+local function VariantButton(parent, def, height, order)
+	local style = Variants[def.Variant or "Secondary"] or Variants.Secondary
+	local button = New("TextButton", {
+		Size = UDim2.fromOffset(0, height),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundTransparency = style.base,
+		LayoutOrder = order or 1,
+		ZIndex = 82,
+		Theme = { BackgroundColor3 = style.bg },
+		Parent = parent,
+	})
+	Corner(button, 9)
+	Pad(button, 0, 14, 0, 14)
+	List(button, 6, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Center)
+	if style.stroke then
+		Stroke(button, "Outline", 1, 0.8)
 	end
+	local icon = MakeIcon(button, def.Icon, 16, style.fg, true)
+	if icon then
+		icon.LayoutOrder = 1
+		icon.ZIndex = 83
+	end
+	Text(button, def.Title or "OK", {
+		Size = UDim2.fromOffset(0, height),
+		AutomaticSize = Enum.AutomaticSize.X,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		LayoutOrder = 2,
+		ZIndex = 83,
+		Theme = { TextColor3 = style.fg },
+	})
+	button.MouseEnter:Connect(function()
+		Tween(button, { BackgroundTransparency = style.hover }, 0.12)
+	end)
+	button.MouseLeave:Connect(function()
+		Tween(button, { BackgroundTransparency = style.base }, 0.12)
+	end)
+	return button
 end
+
+-- ============================================================
+-- Dialog / Popup
+-- host = Frame yang ditutupi overlay (window atau ScreenGui)
+-- ============================================================
+
+local function OpenDialog(host, cfg, radius, afterClose)
+	cfg = cfg or {}
+	local overlay = New("TextButton", {
+		Name = "Dialog",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 1,
+		Text = "",
+		AutoButtonColor = false,
+		ZIndex = 80,
+		Parent = host,
+	})
+	if radius then
+		Corner(overlay, radius)
+	end
+	Tween(overlay, { BackgroundTransparency = 0.45 }, 0.2)
+
+	local hostWidth = host.AbsoluteSize.X
+	if hostWidth < 1 then
+		hostWidth = ViewportSize().X
+	end
+	local width = math.min(cfg.Width or 320, hostWidth - 32)
+
+	local card = New("Frame", {
+		Name = "Card",
+		Active = true,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(width, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		ZIndex = 81,
+		Theme = { BackgroundColor3 = "Dialog" },
+		Parent = overlay,
+	})
+	Corner(card, 14)
+	Stroke(card, "Outline", 1, 0.88)
+	local scale = New("UIScale", { Scale = 0.9, Parent = card })
+	Tween(scale, { Scale = 1 }, 0.25, Enum.EasingStyle.Back)
+
+	local inner = New("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		ZIndex = 82,
+		Parent = card,
+	})
+	Pad(inner, 18)
+	List(inner, 12)
+
+	local head = New("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 24),
+		LayoutOrder = 1,
+		ZIndex = 82,
+		Parent = inner,
+	})
+	List(head, 8, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
+	local icon = MakeIcon(head, cfg.Icon, 22, "Text", true)
+	if icon then
+		icon.LayoutOrder = 1
+		icon.ZIndex = 83
+	end
+	Text(head, cfg.Title or "Dialog", {
+		Size = UDim2.new(1, icon and -30 or 0, 1, 0),
+		TextSize = 18,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		LayoutOrder = 2,
+		ZIndex = 83,
+	})
+
+	if cfg.Content and cfg.Content ~= "" then
+		Text(inner, cfg.Content, {
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			TextWrapped = true,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			Weight = "Regular",
+			TextSize = 14,
+			RichText = true,
+			TextTransparency = 0.35,
+			LayoutOrder = 2,
+			ZIndex = 83,
+		})
+	end
+
+	local buttonRow = New("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 38),
+		LayoutOrder = 3,
+		ZIndex = 82,
+		Parent = inner,
+	})
+	List(buttonRow, 8, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Center)
+
+	local dialog = {}
+	local closed = false
+	function dialog:Close()
+		if closed then
+			return
+		end
+		closed = true
+		Tween(overlay, { BackgroundTransparency = 1 }, 0.15)
+		Tween(scale, { Scale = 0.92 }, 0.15)
+		task.delay(0.16, function()
+			overlay:Destroy()
+			if afterClose then
+				afterClose()
+			end
+		end)
+	end
+
+	local buttons = cfg.Buttons
+	if not buttons or #buttons == 0 then
+		buttons = { { Title = "OK", Variant = "Primary" } }
+	end
+	local count = #buttons
+	for i, def in ipairs(buttons) do
+		if def.Variant == nil then
+			def.Variant = (i == count) and "Primary" or "Secondary"
+		end
+		local button = VariantButton(buttonRow, def, 38, i)
+		button.AutomaticSize = Enum.AutomaticSize.None
+		button.Size = UDim2.new(1 / count, -(8 * (count - 1)) / count, 1, 0)
+		button.MouseButton1Click:Connect(function()
+			Fire(def.Callback)
+			if def.Keep ~= true then
+				dialog:Close()
+			end
+		end)
+	end
+
+	if cfg.Dismissible then
+		overlay.MouseButton1Click:Connect(function()
+			dialog:Close()
+		end)
+	end
+	return dialog
+end
+
+-- popup global (tanpa window), sama seperti WindUI:Popup
+function NexCat:Popup(cfg)
+	local gui = NewGui("NexCat_Popup", 2000)
+	local host = New("Frame", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Parent = gui,
+	})
+	return OpenDialog(host, cfg, nil, function()
+		gui:Destroy()
+	end)
+end
+
+function WindowClass:Dialog(cfg)
+	return OpenDialog(self.Frame, cfg, self.Radius)
+end
+
+function WindowClass:Notify(cfg)
+	return NexCat:Notify(cfg)
+end
+
+function WindowClass:Popup(cfg)
+	return NexCat:Popup(cfg)
+end
+
+-- ============================================================
+-- Window helper: transparansi, koneksi, popup melayang
+-- ============================================================
 
 function WindowClass:SetTransparent(enabled)
 	self.Transparent = enabled and true or false
-	for _, entry in ipairs(self._surfaces) do
-		if entry[1].Parent ~= nil then
-			Tween(entry[1], { BackgroundTransparency = self.Transparent and entry[2] or 0 }, 0.25)
-		end
+	if self.Frame then
+		Tween(self.Frame, { BackgroundTransparency = self.Transparent and NexCat.TransparencyValue or 0 }, 0.25)
 	end
+end
+
+function WindowClass:ToggleTransparency(enabled)
+	self:SetTransparent(enabled)
 end
 
 function WindowClass:_Connect(signal, fn)
@@ -814,159 +1368,14 @@ function WindowClass:_OpenPopup(anchor, width, height, alignRight)
 		Position = UDim2.fromOffset(x, placeAbove and (pos.Y - 4) or (pos.Y + size.Y + 4)),
 		Size = UDim2.fromOffset(width, 0),
 		ZIndex = 51,
-		Theme = { BackgroundColor3 = "Surface" },
+		Theme = { BackgroundColor3 = "Dialog" },
 		Parent = overlay,
 	})
-	Corner(popup, 10)
-	Stroke(popup, "Stroke", 1, 0.1)
+	Corner(popup, 12)
+	Stroke(popup, "Outline", 1, 0.88)
 	Tween(popup, { Size = UDim2.fromOffset(width, height) }, 0.18)
 	self._popup = overlay
 	return popup
-end
-
-function WindowClass:Dialog(cfg)
-	cfg = cfg or {}
-	local viewport = ViewportSize()
-	local overlay = New("TextButton", {
-		Name = "Dialog",
-		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = Color3.new(0, 0, 0),
-		BackgroundTransparency = 1,
-		Text = "",
-		AutoButtonColor = false,
-		ZIndex = 80,
-		Parent = self.Gui,
-	})
-	Tween(overlay, { BackgroundTransparency = 0.5 }, 0.2)
-
-	local card = New("Frame", {
-		Name = "Card",
-		Active = true,
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(math.min(380, viewport.X - 40), 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-		ZIndex = 81,
-		Theme = { BackgroundColor3 = "Surface" },
-		Parent = overlay,
-	})
-	Corner(card, 12)
-	Stroke(card, "Stroke", 1, 0.1)
-	local scale = New("UIScale", { Scale = 0.9, Parent = card })
-	Tween(scale, { Scale = 1 }, 0.25, Enum.EasingStyle.Back)
-
-	local inner = New("Frame", {
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-		Parent = card,
-	})
-	Pad(inner, 18)
-	List(inner, 10)
-
-	local head = New("Frame", {
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 22),
-		LayoutOrder = 1,
-		Parent = inner,
-	})
-	List(head, 8, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
-	local icon = MakeIcon(head, cfg.Icon, 20)
-	if icon then
-		icon.LayoutOrder = 1
-	end
-	Text(head, cfg.Title or "Dialog", {
-		Size = UDim2.new(1, icon and -28 or 0, 1, 0),
-		Font = Enum.Font.GothamBold,
-		TextSize = 16,
-		LayoutOrder = 2,
-	})
-
-	if cfg.Content and cfg.Content ~= "" then
-		Text(inner, cfg.Content, {
-			Size = UDim2.new(1, 0, 0, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			TextWrapped = true,
-			TextYAlignment = Enum.TextYAlignment.Top,
-			Font = Enum.Font.Gotham,
-			TextSize = 13,
-			RichText = true,
-			LayoutOrder = 2,
-			Theme = { TextColor3 = "SubText" },
-		})
-	end
-
-	local buttonRow = New("Frame", {
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 34),
-		LayoutOrder = 3,
-		Parent = inner,
-	})
-	List(buttonRow, 8, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Right, Enum.VerticalAlignment.Center)
-
-	local dialog = {}
-	local closed = false
-	function dialog:Close()
-		if closed then
-			return
-		end
-		closed = true
-		Tween(overlay, { BackgroundTransparency = 1 }, 0.15)
-		Tween(scale, { Scale = 0.92 }, 0.15)
-		task.delay(0.16, function()
-			overlay:Destroy()
-		end)
-	end
-
-	local buttons = cfg.Buttons
-	if not buttons or #buttons == 0 then
-		buttons = { { Title = "OK", Variant = "Primary" } }
-	end
-	for i, def in ipairs(buttons) do
-		local variant = def.Variant or (i == #buttons and "Primary" or "Secondary")
-		local bgKey = variant == "Primary" and "Accent" or variant == "Danger" and "Danger" or "Element"
-		local fgKey = variant == "Primary" and "AccentText" or variant == "Danger" and "AccentText" or "Text"
-		local button = New("TextButton", {
-			Size = UDim2.fromOffset(0, 34),
-			AutomaticSize = Enum.AutomaticSize.X,
-			Text = def.Title or "OK",
-			Font = Enum.Font.GothamMedium,
-			TextSize = 13,
-			AutoButtonColor = false,
-			LayoutOrder = i,
-			ZIndex = 82,
-			Theme = { BackgroundColor3 = bgKey, TextColor3 = fgKey },
-			Parent = buttonRow,
-		})
-		Corner(button, 8)
-		Pad(button, 0, 16, 0, 16)
-		if variant == "Secondary" then
-			Stroke(button, "Stroke", 1, 0.2)
-		end
-		button.MouseEnter:Connect(function()
-			Tween(button, { BackgroundTransparency = 0.15 }, 0.12)
-		end)
-		button.MouseLeave:Connect(function()
-			Tween(button, { BackgroundTransparency = 0 }, 0.12)
-		end)
-		button.MouseButton1Click:Connect(function()
-			Fire(def.Callback)
-			if def.Keep ~= true then
-				dialog:Close()
-			end
-		end)
-	end
-
-	if cfg.Dismissible then
-		overlay.MouseButton1Click:Connect(function()
-			dialog:Close()
-		end)
-	end
-	return dialog
-end
-
-function WindowClass:Notify(cfg)
-	return NekoUI:Notify(cfg)
 end
 
 -- ============================================================
@@ -975,19 +1384,20 @@ end
 
 -- kartu dasar: return row, inner, header, title, desc, lock
 -- widget kanan taruh di `header` dengan LayoutOrder = 2
-local function Card(container, cfg, rightWidth)
+-- rightWidth = lebar widget kanan (px), noIcon = jangan pasang icon di kiri
+local function Card(container, cfg, rightWidth, noIcon)
 	local window = container._window
 	local row = New("Frame", {
 		Name = tostring(cfg.Title or "Element"),
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		LayoutOrder = NextOrder(container._content),
-		Theme = { BackgroundColor3 = "Element" },
+		BackgroundTransparency = ElementTransparency,
+		Theme = { BackgroundColor3 = "Text" },
 		Parent = container._content,
 	})
-	Corner(row, 8)
-	Stroke(row, "Stroke", 1, 0.45)
-	window:_Surface(row, 0.3)
+	Corner(row, window.ElementRadius)
+	Stroke(row, "Outline", 1, 0.92)
 
 	local inner = New("Frame", {
 		BackgroundTransparency = 1,
@@ -995,8 +1405,8 @@ local function Card(container, cfg, rightWidth)
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Parent = row,
 	})
-	Pad(inner, 10, 12, 10, 12)
-	List(inner, 8)
+	Pad(inner, 12, 14, 12, 14)
+	List(inner, 10)
 
 	local header = New("Frame", {
 		BackgroundTransparency = 1,
@@ -1005,12 +1415,21 @@ local function Card(container, cfg, rightWidth)
 		LayoutOrder = 1,
 		Parent = inner,
 	})
-	New("UISizeConstraint", { MinSize = Vector2.new(0, 24), Parent = header })
+	New("UISizeConstraint", { MinSize = Vector2.new(0, 26), Parent = header })
 	List(header, 10, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
 
+	local leftIcon
+	if not noIcon then
+		leftIcon = MakeIcon(header, cfg.Icon, 18, "Icon", cfg.IconThemed)
+		if leftIcon then
+			leftIcon.LayoutOrder = 0
+		end
+	end
+
+	local offset = (leftIcon and 28 or 0) + (rightWidth and (rightWidth + 10) or 0)
 	local left = New("Frame", {
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, rightWidth and -(rightWidth + 10) or 0, 0, 0),
+		Size = UDim2.new(1, -offset, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		LayoutOrder = 1,
 		Parent = header,
@@ -1023,6 +1442,7 @@ local function Card(container, cfg, rightWidth)
 		TextWrapped = true,
 		TextYAlignment = Enum.TextYAlignment.Top,
 		RichText = true,
+		TextSize = 15,
 		LayoutOrder = 1,
 	})
 	local hasDesc = cfg.Desc ~= nil and cfg.Desc ~= ""
@@ -1032,17 +1452,17 @@ local function Card(container, cfg, rightWidth)
 		TextWrapped = true,
 		TextYAlignment = Enum.TextYAlignment.Top,
 		RichText = true,
-		Font = Enum.Font.Gotham,
-		TextSize = 12,
+		Weight = "Regular",
+		TextSize = 13,
+		TextTransparency = 0.4,
 		Visible = hasDesc,
 		LayoutOrder = 2,
-		Theme = { TextColor3 = "SubText" },
 	})
 
 	local lock = New("TextButton", {
 		Name = "Lock",
 		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 0.4,
+		BackgroundTransparency = 0.45,
 		Text = "",
 		AutoButtonColor = false,
 		Visible = cfg.Locked == true,
@@ -1050,7 +1470,7 @@ local function Card(container, cfg, rightWidth)
 		Theme = { BackgroundColor3 = "Background" },
 		Parent = row,
 	})
-	Corner(lock, 8)
+	Corner(lock, window.ElementRadius)
 
 	return row, inner, header, title, desc, lock
 end
@@ -1058,6 +1478,8 @@ end
 -- method umum untuk semua element
 local function Finish(container, cfg, obj, row, title, desc, lock)
 	obj.Element = row
+	local window = container._window
+	window._elements[#window._elements + 1] = obj
 	function obj:SetTitle(value)
 		title.Text = tostring(value)
 	end
@@ -1081,23 +1503,23 @@ local function Finish(container, cfg, obj, row, title, desc, lock)
 	end
 	function obj:Destroy()
 		if obj.Flag then
-			container._window.Flags[obj.Flag] = nil
+			window.Flags[obj.Flag] = nil
 		end
 		row:Destroy()
 	end
 	if cfg.Flag then
 		obj.Flag = cfg.Flag
-		container._window.Flags[cfg.Flag] = obj
+		window.Flags[cfg.Flag] = obj
 	end
 	return obj
 end
 
 local function Hoverable(button, target)
 	button.MouseEnter:Connect(function()
-		Tween(target, { BackgroundColor3 = NekoUI.Theme.ElementHover }, 0.15)
+		Tween(target, { BackgroundTransparency = ElementHoverTransparency }, 0.15)
 	end)
 	button.MouseLeave:Connect(function()
-		Tween(target, { BackgroundColor3 = NekoUI.Theme.Element }, 0.15)
+		Tween(target, { BackgroundTransparency = ElementTransparency }, 0.15)
 	end)
 end
 
@@ -1113,21 +1535,29 @@ local function ClickLayer(row)
 	})
 end
 
+-- kotak kecil (input angka, tombol dropdown, dll)
+local function FieldStyle(inst, radius)
+	inst.BackgroundTransparency = 0.93
+	Bind(inst, "BackgroundColor3", "Text")
+	Corner(inst, radius or 8)
+	return Stroke(inst, "Outline", 1, 0.9)
+end
+
 -- ---------- Button ----------
 function Container:Button(cfg)
 	cfg = cfg or {}
-	local row, _, header, title, desc, lock = Card(self, cfg, 24)
-	local icon = MakeIcon(header, cfg.Icon, 18, "SubText")
+	local row, _, header, title, desc, lock = Card(self, cfg, 20, true)
+	local icon = MakeIcon(header, cfg.Icon, 20, "Icon", cfg.IconThemed)
 	if icon then
 		icon.LayoutOrder = 2
 	else
 		Text(header, "›", {
-			Size = UDim2.fromOffset(24, 24),
-			Font = Enum.Font.GothamBold,
-			TextSize = 22,
+			Size = UDim2.fromOffset(20, 24),
+			Weight = "Bold",
+			TextSize = 24,
 			TextXAlignment = Enum.TextXAlignment.Center,
 			LayoutOrder = 2,
-			Theme = { TextColor3 = "SubText" },
+			Theme = { TextColor3 = "Icon" },
 		})
 	end
 	local click = ClickLayer(row)
@@ -1143,48 +1573,89 @@ function Container:Button(cfg)
 	return Finish(self, cfg, obj, row, title, desc, lock)
 end
 
--- ---------- Toggle ----------
+-- ---------- Toggle (Type = "Toggle" | "Checkbox") ----------
 function Container:Toggle(cfg)
 	cfg = cfg or {}
-	local row, _, header, title, desc, lock = Card(self, cfg, 40)
-	local state = (cfg.Value or cfg.Default) == true
+	local checkbox = cfg.Type == "Checkbox"
+	local row, _, header, title, desc, lock = Card(self, cfg, checkbox and 22 or 42)
+	local init = cfg.Value
+	if init == nil then
+		init = cfg.Default
+	end
+	local state = init == true
 
-	local track = New("Frame", {
-		Name = "Track",
-		Size = UDim2.fromOffset(40, 22),
-		LayoutOrder = 2,
-		Theme = {
-			BackgroundColor3 = function(theme)
-				return state and theme.Accent or theme.ToggleOff
-			end,
-		},
-		Parent = header,
-	})
-	Corner(track, 11)
-	local knob = New("Frame", {
-		Name = "Knob",
-		Size = UDim2.fromOffset(16, 16),
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = state and UDim2.new(1, -19, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
-		Theme = {
-			BackgroundColor3 = function(theme)
-				return state and theme.AccentText or theme.Text
-			end,
-		},
-		Parent = track,
-	})
-	Corner(knob, 8)
+	local track, knob, box, boxStroke, mark
+	if checkbox then
+		box = New("Frame", {
+			Name = "Box",
+			Size = UDim2.fromOffset(22, 22),
+			LayoutOrder = 2,
+			BackgroundTransparency = state and 0 or 0.9,
+			Theme = {
+				BackgroundColor3 = function(theme)
+					return state and theme.Toggle or theme.Text
+				end,
+			},
+			Parent = header,
+		})
+		Corner(box, 6)
+		boxStroke = Stroke(box, "Outline", 1, state and 1 or 0.8)
+		mark = Text(box, "✓", {
+			Size = UDim2.fromScale(1, 1),
+			Weight = "Bold",
+			TextSize = 15,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			TextTransparency = state and 0 or 1,
+			Theme = { TextColor3 = "KnobOn" },
+		})
+	else
+		track = New("Frame", {
+			Name = "Track",
+			Size = UDim2.fromOffset(42, 24),
+			LayoutOrder = 2,
+			Theme = {
+				BackgroundColor3 = function(theme)
+					return state and theme.Toggle or theme.Button
+				end,
+			},
+			Parent = header,
+		})
+		Corner(track, 12)
+		knob = New("Frame", {
+			Name = "Knob",
+			Size = UDim2.fromOffset(18, 18),
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = state and UDim2.new(1, -21, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
+			Theme = {
+				BackgroundColor3 = function(theme)
+					return state and theme.KnobOn or theme.White
+				end,
+			},
+			Parent = track,
+		})
+		Corner(knob, 9)
+	end
 
 	local click = ClickLayer(row)
 	Hoverable(click, row)
 
 	local obj = { Type = "Toggle", Value = state }
 	local function render()
-		Tween(track, { BackgroundColor3 = state and NekoUI.Theme.Accent or NekoUI.Theme.ToggleOff }, 0.15)
-		Tween(knob, {
-			Position = state and UDim2.new(1, -19, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
-			BackgroundColor3 = state and NekoUI.Theme.AccentText or NekoUI.Theme.Text,
-		}, 0.15)
+		local theme = NexCat.Theme
+		if checkbox then
+			Tween(box, {
+				BackgroundColor3 = state and theme.Toggle or theme.Text,
+				BackgroundTransparency = state and 0 or 0.9,
+			}, 0.15)
+			Tween(boxStroke, { Transparency = state and 1 or 0.8 }, 0.15)
+			Tween(mark, { TextTransparency = state and 0 or 1 }, 0.15)
+		else
+			Tween(track, { BackgroundColor3 = state and theme.Toggle or theme.Button }, 0.18)
+			Tween(knob, {
+				Position = state and UDim2.new(1, -21, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
+				BackgroundColor3 = state and theme.KnobOn or theme.White,
+			}, 0.18)
+		end
 	end
 	function obj:Set(value, silent)
 		state = value and true or false
@@ -1219,7 +1690,7 @@ function Container:Slider(cfg)
 		min, max = max, min
 	end
 	default = default or min
-	local step = cfg.Step or 1
+	local step = cfg.Step or cfg.Increment or 1
 	if step <= 0 then
 		step = 1
 	end
@@ -1248,21 +1719,20 @@ function Container:Slider(cfg)
 	local row, inner, header, title, desc, lock = Card(self, cfg, 64)
 	local box = New("TextBox", {
 		Name = "Value",
-		Size = UDim2.fromOffset(64, 24),
+		Size = UDim2.fromOffset(64, 26),
 		LayoutOrder = 2,
 		Text = "",
-		Font = Enum.Font.GothamMedium,
-		TextSize = 12,
+		Font = FontOf("Medium"),
+		TextSize = 13,
 		ClearTextOnFocus = false,
-		Theme = { BackgroundColor3 = "Surface", TextColor3 = "Text" },
+		Theme = { TextColor3 = "Text" },
 		Parent = header,
 	})
-	Corner(box, 6)
-	Stroke(box, "Stroke", 1, 0.3)
+	FieldStyle(box, 8)
 
 	local barHolder = New("Frame", {
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, 0, 0, 16),
+		Size = UDim2.new(1, 0, 0, 20),
 		LayoutOrder = 2,
 		Parent = inner,
 	})
@@ -1271,14 +1741,14 @@ function Container:Slider(cfg)
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.fromScale(0, 0.5),
 		Size = UDim2.new(1, 0, 0, 6),
-		Theme = { BackgroundColor3 = "ToggleOff" },
+		Theme = { BackgroundColor3 = "Button" },
 		Parent = barHolder,
 	})
 	Corner(track, 3)
 	local fill = New("Frame", {
 		Name = "Fill",
 		Size = UDim2.fromScale(0, 1),
-		Theme = { BackgroundColor3 = "Accent" },
+		Theme = { BackgroundColor3 = "Toggle" },
 		Parent = track,
 	})
 	Corner(fill, 3)
@@ -1287,11 +1757,11 @@ function Container:Slider(cfg)
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0, 0.5),
 		Size = UDim2.fromOffset(14, 14),
-		Theme = { BackgroundColor3 = "Text" },
+		Theme = { BackgroundColor3 = "White" },
 		Parent = track,
 	})
-	Corner(knob, 7)
-	Stroke(knob, "Surface", 2, 0)
+	Corner(knob, 9)
+	Stroke(knob, "Outline", 1, 0.75)
 
 	local obj = { Type = "Slider", Min = min, Max = max }
 	local value = snap(default)
@@ -1347,10 +1817,12 @@ function Container:Slider(cfg)
 			Fire(cfg.Callback, value)
 		end
 	end, function()
+		Tween(knob, { Size = UDim2.fromOffset(18, 18) }, 0.12)
 		if scroll then
 			scroll.ScrollingEnabled = false
 		end
 	end, function()
+		Tween(knob, { Size = UDim2.fromOffset(14, 14) }, 0.12)
 		if scroll then
 			scroll.ScrollingEnabled = true
 		end
@@ -1359,16 +1831,34 @@ function Container:Slider(cfg)
 	return Finish(self, cfg, obj, row, title, desc, lock)
 end
 
--- ---------- Input ----------
+-- ---------- Input (Type = "Input" | "Textarea") ----------
 function Container:Input(cfg)
 	cfg = cfg or {}
-	local row, inner, _, title, desc, lock = Card(self, cfg)
+	local row, inner, _, title, desc, lock = Card(self, cfg, nil, false)
 	local multiline = cfg.Type == "Textarea" or cfg.Multiline == true
 
-	local box = New("TextBox", {
+	local holder = New("Frame", {
 		Name = "Field",
-		Size = UDim2.new(1, 0, 0, multiline and 84 or 32),
+		Size = UDim2.new(1, 0, 0, multiline and 90 or 34),
 		LayoutOrder = 2,
+		Parent = inner,
+	})
+	local stroke = FieldStyle(holder, 8)
+
+	local iconSpace = 0
+	if cfg.InputIcon then
+		local inputIcon = MakeIcon(holder, cfg.InputIcon, 16, "Icon", cfg.IconThemed)
+		if inputIcon then
+			inputIcon.AnchorPoint = Vector2.new(0, multiline and 0 or 0.5)
+			inputIcon.Position = UDim2.new(0, 10, multiline and 0 or 0.5, multiline and 9 or 0)
+			iconSpace = 26
+		end
+	end
+
+	local box = New("TextBox", {
+		Name = "Input",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
 		Text = cfg.Value or cfg.Default or "",
 		PlaceholderText = cfg.Placeholder or cfg.PlaceholderText or "Ketik di sini...",
 		ClearTextOnFocus = cfg.ClearTextOnFocus == true,
@@ -1376,21 +1866,19 @@ function Container:Input(cfg)
 		TextWrapped = multiline,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = multiline and Enum.TextYAlignment.Top or Enum.TextYAlignment.Center,
-		Font = Enum.Font.Gotham,
-		TextSize = 13,
-		Theme = { BackgroundColor3 = "Surface", TextColor3 = "Text", PlaceholderColor3 = "SubText" },
-		Parent = inner,
+		Font = FontOf("Regular"),
+		TextSize = 14,
+		Theme = { TextColor3 = "Text", PlaceholderColor3 = "Placeholder" },
+		Parent = holder,
 	})
-	Corner(box, 6)
-	local stroke = Stroke(box, "Stroke", 1, 0.2)
-	Pad(box, multiline and 8 or 0, 10, multiline and 8 or 0, 10)
+	Pad(box, multiline and 8 or 0, 10, multiline and 8 or 0, 10 + iconSpace)
 
 	local obj = { Type = "Input", Value = box.Text }
 	box.Focused:Connect(function()
-		Tween(stroke, { Color = NekoUI.Theme.Accent }, 0.15)
+		Tween(stroke, { Transparency = 0.55 }, 0.15)
 	end)
 	box.FocusLost:Connect(function()
-		Tween(stroke, { Color = NekoUI.Theme.Stroke }, 0.15)
+		Tween(stroke, { Transparency = 0.9 }, 0.15)
 		obj.Value = box.Text
 		if not cfg.Live then
 			Fire(cfg.Callback, box.Text)
@@ -1423,11 +1911,30 @@ function Container:Input(cfg)
 end
 
 -- ---------- Dropdown ----------
+-- Values = { "A", "B" } atau { { Title = "A", Icon = "home", Callback = fn }, ... }
+local function NormalizeValues(values)
+	local list = {}
+	for _, item in ipairs(values or {}) do
+		if type(item) == "table" then
+			local name = item.Title or item.Name or item.Value
+			list[#list + 1] = {
+				Value = name,
+				Title = tostring(name),
+				Icon = item.Icon,
+				Callback = item.Callback,
+			}
+		else
+			list[#list + 1] = { Value = item, Title = tostring(item) }
+		end
+	end
+	return list
+end
+
 function Container:Dropdown(cfg)
 	cfg = cfg or {}
 	local window = self._window
 	local multi = cfg.Multi == true
-	local values = cfg.Values or {}
+	local entries = NormalizeValues(cfg.Values)
 	local sel = {}
 	local init = cfg.Value
 	if init == nil then
@@ -1446,43 +1953,41 @@ function Container:Dropdown(cfg)
 	local row, _, header, title, desc, lock = Card(self, cfg, 150)
 	local button = New("TextButton", {
 		Name = "Select",
-		Size = UDim2.fromOffset(150, 28),
+		Size = UDim2.fromOffset(150, 30),
 		LayoutOrder = 2,
 		Text = "",
 		AutoButtonColor = false,
-		Theme = { BackgroundColor3 = "Surface" },
 		Parent = header,
 	})
-	Corner(button, 6)
-	Stroke(button, "Stroke", 1, 0.2)
+	FieldStyle(button, 8)
 	local label = Text(button, "", {
-		Size = UDim2.new(1, -30, 1, 0),
+		Size = UDim2.new(1, -32, 1, 0),
 		Position = UDim2.fromOffset(10, 0),
-		TextSize = 13,
+		TextSize = 14,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 	})
 	Text(button, "▾", {
-		Size = UDim2.fromOffset(18, 28),
-		Position = UDim2.new(1, -22, 0, 0),
+		Size = UDim2.fromOffset(18, 30),
+		Position = UDim2.new(1, -24, 0, 0),
 		TextXAlignment = Enum.TextXAlignment.Center,
-		Theme = { TextColor3 = "SubText" },
+		Theme = { TextColor3 = "Icon" },
 	})
 
-	local obj = { Type = "Dropdown", Values = values }
+	local obj = { Type = "Dropdown", Values = cfg.Values or {} }
 
 	local function getValue()
 		if multi then
 			local out = {}
-			for _, item in ipairs(values) do
-				if sel[item] then
-					out[#out + 1] = item
+			for _, entry in ipairs(entries) do
+				if sel[entry.Value] then
+					out[#out + 1] = entry.Value
 				end
 			end
 			return out
 		end
-		for _, item in ipairs(values) do
-			if sel[item] then
-				return item
+		for _, entry in ipairs(entries) do
+			if sel[entry.Value] then
+				return entry.Value
 			end
 		end
 		return nil
@@ -1506,49 +2011,43 @@ function Container:Dropdown(cfg)
 	updateLabel()
 
 	local function open()
-		local count = #values
+		local count = #entries
 		if count == 0 then
 			return
 		end
-		local showSearch = cfg.Search == true or (cfg.Search == nil and count > 8)
-		local top = showSearch and 40 or 0
-		local listHeight = math.min(count * 32 + 8, 200)
-		local width = math.max(button.AbsoluteSize.X, 170)
+		local showSearch = cfg.Search == true or cfg.SearchBarEnabled == true or (cfg.Search == nil and count > 8)
+		local top = showSearch and 44 or 0
+		local listHeight = math.min(count * 36 + 8, 220)
+		local width = math.max(button.AbsoluteSize.X, cfg.MenuWidth or 170)
 		local popup = window:_OpenPopup(button, width, listHeight + top, true)
 
 		local options = {}
 		local function paint(option, hover)
-			local selected = sel[option.value] == true
+			local selected = sel[option.entry.Value] == true
 			option.check.Visible = selected
-			if selected then
-				option.button.BackgroundColor3 = NekoUI.Theme.Accent
-				option.button.BackgroundTransparency = hover and 0.75 or 0.86
-			else
-				option.button.BackgroundColor3 = NekoUI.Theme.ElementHover
-				option.button.BackgroundTransparency = hover and 0 or 1
-			end
+			option.button.BackgroundTransparency = selected and (hover and 0.84 or 0.9) or (hover and 0.93 or 1)
 		end
 
 		if showSearch then
 			local search = New("TextBox", {
-				Size = UDim2.new(1, -16, 0, 28),
-				Position = UDim2.fromOffset(8, 6),
+				Size = UDim2.new(1, -16, 0, 30),
+				Position = UDim2.fromOffset(8, 7),
 				Text = "",
 				PlaceholderText = "Cari...",
 				ClearTextOnFocus = false,
-				Font = Enum.Font.Gotham,
-				TextSize = 13,
+				Font = FontOf("Regular"),
+				TextSize = 14,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				ZIndex = 52,
-				Theme = { BackgroundColor3 = "Element", TextColor3 = "Text", PlaceholderColor3 = "SubText" },
+				Theme = { TextColor3 = "Text", PlaceholderColor3 = "Placeholder" },
 				Parent = popup,
 			})
-			Corner(search, 6)
-			Pad(search, 0, 8, 0, 8)
+			FieldStyle(search, 8)
+			Pad(search, 0, 10, 0, 10)
 			search:GetPropertyChangedSignal("Text"):Connect(function()
 				local q = search.Text:lower()
 				for _, option in ipairs(options) do
-					option.button.Visible = q == "" or tostring(option.value):lower():find(q, 1, true) ~= nil
+					option.button.Visible = q == "" or option.entry.Title:lower():find(q, 1, true) ~= nil
 				end
 			end)
 		end
@@ -1559,43 +2058,52 @@ function Container:Dropdown(cfg)
 			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
 			ScrollBarThickness = 3,
+			ScrollBarImageTransparency = 0.5,
 			CanvasSize = UDim2.new(),
 			AutomaticCanvasSize = Enum.AutomaticSize.Y,
 			ZIndex = 52,
-			Theme = { ScrollBarImageColor3 = "SubText" },
+			Theme = { ScrollBarImageColor3 = "Icon" },
 			Parent = popup,
 		})
 		Pad(scroller, 4, 4, 4, 4)
 		List(scroller, 2)
 
-		for i, item in ipairs(values) do
+		for i, entry in ipairs(entries) do
 			local optionButton = New("TextButton", {
-				Size = UDim2.new(1, 0, 0, 30),
+				Size = UDim2.new(1, 0, 0, 34),
 				BackgroundTransparency = 1,
 				Text = "",
 				AutoButtonColor = false,
 				LayoutOrder = i,
 				ZIndex = 53,
+				Theme = { BackgroundColor3 = "Text" },
 				Parent = scroller,
 			})
-			Corner(optionButton, 6)
-			Text(optionButton, tostring(item), {
-				Size = UDim2.new(1, -32, 1, 0),
-				Position = UDim2.fromOffset(10, 0),
-				TextSize = 13,
+			Corner(optionButton, 8)
+			local textOffset = 10
+			local optionIcon = MakeIcon(optionButton, entry.Icon, 16, "Icon")
+			if optionIcon then
+				optionIcon.AnchorPoint = Vector2.new(0, 0.5)
+				optionIcon.Position = UDim2.new(0, 10, 0.5, 0)
+				optionIcon.ZIndex = 54
+				textOffset = 34
+			end
+			Text(optionButton, entry.Title, {
+				Size = UDim2.new(1, -(textOffset + 28), 1, 0),
+				Position = UDim2.fromOffset(textOffset, 0),
+				TextSize = 14,
 				TextTruncate = Enum.TextTruncate.AtEnd,
 				ZIndex = 54,
 			})
 			local check = Text(optionButton, "✓", {
-				Size = UDim2.fromOffset(20, 30),
-				Position = UDim2.new(1, -24, 0, 0),
+				Size = UDim2.fromOffset(20, 34),
+				Position = UDim2.new(1, -26, 0, 0),
 				TextXAlignment = Enum.TextXAlignment.Center,
-				Font = Enum.Font.GothamBold,
+				Weight = "Bold",
 				ZIndex = 54,
 				Visible = false,
-				Theme = { TextColor3 = "Accent" },
 			})
-			local option = { value = item, button = optionButton, check = check }
+			local option = { entry = entry, button = optionButton, check = check }
 			options[#options + 1] = option
 			paint(option, false)
 
@@ -1606,15 +2114,17 @@ function Container:Dropdown(cfg)
 				paint(option, false)
 			end)
 			optionButton.MouseButton1Click:Connect(function()
+				local key = entry.Value
 				if multi then
-					sel[item] = not sel[item] or nil
-				elseif sel[item] and cfg.AllowNone then
+					sel[key] = not sel[key] or nil
+				elseif sel[key] and cfg.AllowNone then
 					sel = {}
 				else
-					sel = { [item] = true }
+					sel = { [key] = true }
 				end
 				updateLabel()
 				Fire(cfg.Callback, obj.Value)
+				Fire(entry.Callback)
 				if multi then
 					for _, o in ipairs(options) do
 						paint(o, o == option)
@@ -1651,13 +2161,13 @@ function Container:Dropdown(cfg)
 		return obj.Value
 	end
 	function obj:Refresh(newValues, keepSelection)
-		values = newValues or {}
-		obj.Values = values
+		entries = NormalizeValues(newValues)
+		obj.Values = newValues or {}
 		if not keepSelection then
 			local valid = {}
-			for _, item in ipairs(values) do
-				if sel[item] then
-					valid[item] = true
+			for _, entry in ipairs(entries) do
+				if sel[entry.Value] then
+					valid[entry.Value] = true
 				end
 			end
 			sel = valid
@@ -1685,24 +2195,22 @@ end
 
 function Container:Keybind(cfg)
 	cfg = cfg or {}
-	local row, _, header, title, desc, lock = Card(self, cfg, 90)
+	local row, _, header, title, desc, lock = Card(self, cfg, 96)
 	local key = ToKeyCode(cfg.Value or cfg.Default)
 	local listening = false
 
 	local button = New("TextButton", {
 		Name = "Key",
-		Size = UDim2.fromOffset(90, 28),
+		Size = UDim2.fromOffset(96, 30),
 		LayoutOrder = 2,
 		Text = "",
 		AutoButtonColor = false,
-		Theme = { BackgroundColor3 = "Surface" },
 		Parent = header,
 	})
-	Corner(button, 6)
-	local stroke = Stroke(button, "Stroke", 1, 0.2)
+	local stroke = FieldStyle(button, 8)
 	local label = Text(button, key and key.Name or "None", {
 		Size = UDim2.fromScale(1, 1),
-		TextSize = 12,
+		TextSize = 13,
 		TextXAlignment = Enum.TextXAlignment.Center,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 	})
@@ -1710,7 +2218,7 @@ function Container:Keybind(cfg)
 	local obj = { Type = "Keybind", Value = key }
 	local function render()
 		label.Text = listening and "..." or (key and key.Name or "None")
-		Tween(stroke, { Color = listening and NekoUI.Theme.Accent or NekoUI.Theme.Stroke }, 0.15)
+		Tween(stroke, { Transparency = listening and 0.5 or 0.9 }, 0.15)
 	end
 
 	button.MouseButton1Click:Connect(function()
@@ -1752,7 +2260,7 @@ function Container:Keybind(cfg)
 	return Finish(self, cfg, obj, row, title, desc, lock)
 end
 
--- ---------- Colorpicker ----------
+-- ---------- Colorpicker (opsional: Transparency = 0..1 untuk slider alpha) ----------
 local function ColorToHex(color)
 	return string.format(
 		"#%02X%02X%02X",
@@ -1777,45 +2285,60 @@ end
 function Container:Colorpicker(cfg)
 	cfg = cfg or {}
 	local window = self._window
-	local row, _, header, title, desc, lock = Card(self, cfg, 44)
+	local row, _, header, title, desc, lock = Card(self, cfg, 46)
 	local color = cfg.Value or cfg.Default or Color3.fromRGB(255, 255, 255)
+	local hasAlpha = cfg.Transparency ~= nil
+	local transparency = cfg.Transparency or 0
 	local h, s, v = color:ToHSV()
 
 	local swatch = New("TextButton", {
 		Name = "Swatch",
-		Size = UDim2.fromOffset(44, 24),
+		Size = UDim2.fromOffset(46, 26),
 		LayoutOrder = 2,
 		Text = "",
 		AutoButtonColor = false,
 		BackgroundColor3 = color,
+		BackgroundTransparency = transparency,
 		Parent = header,
 	})
-	Corner(swatch, 6)
-	Stroke(swatch, "Stroke", 1, 0)
+	Corner(swatch, 8)
+	Stroke(swatch, "Outline", 1, 0.8)
 
-	local obj = { Type = "Colorpicker", Value = color }
+	local obj = { Type = "Colorpicker", Value = color, Transparency = transparency }
 	local ui -- referensi UI popup, nil kalau popup tertutup
 
 	local function apply(fire)
 		color = Color3.fromHSV(h, s, v)
 		obj.Value = color
+		obj.Transparency = transparency
 		swatch.BackgroundColor3 = color
+		swatch.BackgroundTransparency = transparency
 		if ui then
 			ui.sv.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
 			ui.svCursor.Position = UDim2.fromScale(s, 1 - v)
 			ui.hueCursor.Position = UDim2.fromScale(h, 0.5)
 			ui.preview.BackgroundColor3 = color
+			ui.preview.BackgroundTransparency = transparency
+			if ui.alphaBar then
+				ui.alphaBar.BackgroundColor3 = color
+				ui.alphaCursor.Position = UDim2.fromScale(1 - transparency, 0.5)
+			end
 			if not ui.hex:IsFocused() then
 				ui.hex.Text = ColorToHex(color)
 			end
 		end
 		if fire then
-			Fire(cfg.Callback, color)
+			if hasAlpha then
+				Fire(cfg.Callback, color, transparency)
+			else
+				Fire(cfg.Callback, color)
+			end
 		end
 	end
 
 	local function open()
-		local popup = window:_OpenPopup(swatch, 236, 204, true)
+		local hexY = hasAlpha and 184 or 166
+		local popup = window:_OpenPopup(swatch, 236, hexY + 38, true)
 		local scroll = self._scroll
 
 		local sv = New("Frame", {
@@ -1826,7 +2349,7 @@ function Container:Colorpicker(cfg)
 			ZIndex = 52,
 			Parent = popup,
 		})
-		Corner(sv, 6)
+		Corner(sv, 8)
 		local white = New("Frame", {
 			Size = UDim2.fromScale(1, 1),
 			BackgroundColor3 = Color3.new(1, 1, 1),
@@ -1834,7 +2357,7 @@ function Container:Colorpicker(cfg)
 			ZIndex = 53,
 			Parent = sv,
 		})
-		Corner(white, 6)
+		Corner(white, 8)
 		New("UIGradient", { Transparency = NumberSequence.new(0, 1), Parent = white })
 		local black = New("Frame", {
 			Size = UDim2.fromScale(1, 1),
@@ -1843,7 +2366,7 @@ function Container:Colorpicker(cfg)
 			ZIndex = 54,
 			Parent = sv,
 		})
-		Corner(black, 6)
+		Corner(black, 8)
 		New("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(1, 0), Parent = black })
 		local svCursor = New("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -1904,29 +2427,78 @@ function Container:Colorpicker(cfg)
 			Parent = hue,
 		})
 
+		local alphaTrack, alphaBar, alphaCursor, alphaHit
+		if hasAlpha then
+			alphaTrack = New("Frame", {
+				Name = "Alpha",
+				Position = UDim2.fromOffset(10, 160),
+				Size = UDim2.fromOffset(216, 12),
+				BorderSizePixel = 0,
+				ZIndex = 52,
+				Theme = { BackgroundColor3 = "Button" },
+				Parent = popup,
+			})
+			Corner(alphaTrack, 6)
+			alphaBar = New("Frame", {
+				Size = UDim2.fromScale(1, 1),
+				BackgroundColor3 = color,
+				BorderSizePixel = 0,
+				ZIndex = 53,
+				Parent = alphaTrack,
+			})
+			Corner(alphaBar, 6)
+			New("UIGradient", { Transparency = NumberSequence.new(1, 0), Parent = alphaBar })
+			alphaCursor = New("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Size = UDim2.fromOffset(6, 18),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				ZIndex = 54,
+				Parent = alphaTrack,
+			})
+			Corner(alphaCursor, 3)
+			New("UIStroke", { Color = Color3.new(0, 0, 0), Thickness = 1, Transparency = 0.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = alphaCursor })
+			alphaHit = New("TextButton", {
+				Size = UDim2.new(1, 0, 1, 12),
+				Position = UDim2.fromOffset(0, -6),
+				BackgroundTransparency = 1,
+				Text = "",
+				AutoButtonColor = false,
+				ZIndex = 57,
+				Parent = alphaTrack,
+			})
+		end
+
 		local hex = New("TextBox", {
 			Name = "Hex",
-			Position = UDim2.fromOffset(10, 166),
+			Position = UDim2.fromOffset(10, hexY),
 			Size = UDim2.fromOffset(104, 28),
 			Text = "",
-			Font = Enum.Font.GothamMedium,
+			Font = FontOf("Medium"),
 			TextSize = 13,
 			ClearTextOnFocus = false,
 			ZIndex = 52,
-			Theme = { BackgroundColor3 = "Element", TextColor3 = "Text" },
+			Theme = { TextColor3 = "Text" },
 			Parent = popup,
 		})
-		Corner(hex, 6)
+		FieldStyle(hex, 8)
 		local preview = New("Frame", {
-			Position = UDim2.fromOffset(122, 166),
+			Position = UDim2.fromOffset(122, hexY),
 			Size = UDim2.fromOffset(104, 28),
 			ZIndex = 52,
 			Parent = popup,
 		})
-		Corner(preview, 6)
-		Stroke(preview, "Stroke", 1, 0)
+		Corner(preview, 8)
+		Stroke(preview, "Outline", 1, 0.8)
 
-		ui = { sv = sv, svCursor = svCursor, hueCursor = hueCursor, hex = hex, preview = preview }
+		ui = {
+			sv = sv,
+			svCursor = svCursor,
+			hueCursor = hueCursor,
+			hex = hex,
+			preview = preview,
+			alphaBar = alphaBar,
+			alphaCursor = alphaCursor,
+		}
 		popup.Destroying:Connect(function()
 			ui = nil
 			if scroll then
@@ -1954,6 +2526,13 @@ function Container:Colorpicker(cfg)
 			h = math.clamp((pos.X - hue.AbsolutePosition.X) / math.max(hue.AbsoluteSize.X, 1), 0, 1)
 			apply(true)
 		end, freeze, unfreeze, true)
+		if alphaHit then
+			Drag(alphaHit, function(pos)
+				local a = math.clamp((pos.X - alphaTrack.AbsolutePosition.X) / math.max(alphaTrack.AbsoluteSize.X, 1), 0, 1)
+				transparency = 1 - a
+				apply(true)
+			end, freeze, unfreeze, true)
+		end
 
 		hex.FocusLost:Connect(function()
 			local parsed = HexToColor(hex.Text)
@@ -1985,14 +2564,27 @@ function Container:Colorpicker(cfg)
 	return Finish(self, cfg, obj, row, title, desc, lock)
 end
 
--- ---------- Paragraph / Label ----------
+-- ---------- Paragraph / Label (opsional: Buttons = { {Title, Icon, Variant, Callback} }) ----------
 function Container:Paragraph(cfg)
 	cfg = cfg or {}
-	local row, _, header, title, desc, lock = Card(self, cfg)
-	local icon = MakeIcon(header, cfg.Icon, 20)
-	if icon then
-		icon.LayoutOrder = 2
-		header:FindFirstChildWhichIsA("Frame").Size = UDim2.new(1, -30, 0, 0)
+	local row, inner, _, title, desc, lock = Card(self, cfg)
+	if type(cfg.Buttons) == "table" and #cfg.Buttons > 0 then
+		local buttonRow = New("Frame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			LayoutOrder = 2,
+			Parent = inner,
+		})
+		local layout = List(buttonRow, 8, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Top)
+		layout.Wraps = true
+		for i, def in ipairs(cfg.Buttons) do
+			local button = VariantButton(buttonRow, def, 32, i)
+			button.ZIndex = 2
+			button.MouseButton1Click:Connect(function()
+				Fire(def.Callback)
+			end)
+		end
 	end
 	return Finish(self, cfg, { Type = "Paragraph" }, row, title, desc, lock)
 end
@@ -2004,15 +2596,76 @@ function Container:Label(cfg)
 	return self:Paragraph(cfg)
 end
 
--- ---------- Divider ----------
+-- ---------- Code (blok kode + tombol salin) ----------
+function Container:Code(cfg)
+	cfg = cfg or {}
+	local row, inner, header, title, desc, lock = Card(self, cfg, 56)
+	local copy = New("TextButton", {
+		Name = "Copy",
+		Size = UDim2.fromOffset(56, 26),
+		LayoutOrder = 2,
+		Text = "",
+		AutoButtonColor = false,
+		Parent = header,
+	})
+	FieldStyle(copy, 8)
+	Text(copy, "Salin", {
+		Size = UDim2.fromScale(1, 1),
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Center,
+	})
+
+	local box = New("Frame", {
+		Name = "CodeBox",
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = 2,
+		BackgroundTransparency = 0.35,
+		Theme = { BackgroundColor3 = "Background" },
+		Parent = inner,
+	})
+	Corner(box, 8)
+	Stroke(box, "Outline", 1, 0.92)
+	Pad(box, 10, 12, 10, 12)
+	local label = Text(box, cfg.Code or "", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Font = Enum.Font.Code,
+		TextSize = 13,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		RichText = false,
+	})
+
+	local obj = { Type = "Code" }
+	function obj:SetCode(value)
+		label.Text = tostring(value or "")
+	end
+	function obj:Copy()
+		local clip = setclipboard or toclipboard
+		if type(clip) == "function" then
+			pcall(clip, label.Text)
+			NexCat:Notify({ Title = "Disalin", Content = "Kode disalin ke clipboard.", Type = "Success", Duration = 2 })
+		else
+			NexCat:Notify({ Title = "Gagal menyalin", Content = "Clipboard tidak tersedia di environment ini.", Type = "Warning", Duration = 3 })
+		end
+		Fire(cfg.Callback, label.Text)
+	end
+	copy.MouseButton1Click:Connect(function()
+		obj:Copy()
+	end)
+	return Finish(self, cfg, obj, row, title, desc, lock)
+end
+
+-- ---------- Divider / Space ----------
 function Container:Divider()
 	local line = New("Frame", {
 		Name = "Divider",
 		Size = UDim2.new(1, 0, 0, 1),
 		BorderSizePixel = 0,
-		BackgroundTransparency = 0.4,
+		BackgroundTransparency = 0.9,
 		LayoutOrder = NextOrder(self._content),
-		Theme = { BackgroundColor3 = "Stroke" },
+		Theme = { BackgroundColor3 = "Outline" },
 		Parent = self._content,
 	})
 	return { Type = "Divider", Element = line, Destroy = function()
@@ -2020,43 +2673,92 @@ function Container:Divider()
 	end }
 end
 
--- ---------- Section (grup yang bisa dilipat) ----------
+function Container:Space(cfg)
+	local columns = 1
+	if type(cfg) == "number" then
+		columns = cfg
+	elseif type(cfg) == "table" and cfg.Columns then
+		columns = cfg.Columns
+	end
+	local space = New("Frame", {
+		Name = "Space",
+		Size = UDim2.new(1, 0, 0, 14 * math.max(columns, 1)),
+		BackgroundTransparency = 1,
+		LayoutOrder = NextOrder(self._content),
+		Parent = self._content,
+	})
+	return { Type = "Space", Element = space, Destroy = function()
+		space:Destroy()
+	end }
+end
+
+-- ---------- Section (grup yang bisa dilipat, opsional Box) ----------
+-- cfg: Title, Desc, Icon, Opened, Box, BoxBorder, TextSize, TextXAlignment
 function Container:Section(cfg)
 	if type(cfg) == "string" then
 		cfg = { Title = cfg }
 	end
 	cfg = cfg or {}
+	local window = self._window
+	local boxed = cfg.Box == true
+	local hasDesc = cfg.Desc ~= nil and cfg.Desc ~= ""
+
 	local wrapper = New("Frame", {
 		Name = tostring(cfg.Title or "Section"),
-		BackgroundTransparency = 1,
+		BackgroundTransparency = boxed and ElementTransparency or 1,
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		LayoutOrder = NextOrder(self._content),
+		Theme = { BackgroundColor3 = "Text" },
 		Parent = self._content,
 	})
+	if boxed then
+		Corner(wrapper, window.ElementRadius + 2)
+		if cfg.BoxBorder == true then
+			Stroke(wrapper, "Outline", 1, 0.9)
+		end
+		Pad(wrapper, 10, 10, 10, 10)
+	end
 	List(wrapper, 8)
 
 	local head = New("TextButton", {
 		Name = "Header",
-		Size = UDim2.new(1, 0, 0, 26),
+		Size = UDim2.new(1, 0, 0, hasDesc and 42 or 28),
 		BackgroundTransparency = 1,
 		Text = "",
 		AutoButtonColor = false,
 		LayoutOrder = 0,
 		Parent = wrapper,
 	})
-	Text(head, cfg.Title or "Section", {
-		Size = UDim2.new(1, -24, 1, 0),
-		Position = UDim2.fromOffset(2, 0),
-		Font = Enum.Font.GothamBold,
-		TextSize = 14,
+	local textX = 2
+	local icon = MakeIcon(head, cfg.Icon, 18, "Icon", cfg.IconThemed)
+	if icon then
+		icon.AnchorPoint = Vector2.new(0, 0.5)
+		icon.Position = UDim2.new(0, 2, 0.5, 0)
+		textX = 28
+	end
+	local titleLabel = Text(head, cfg.Title or "Section", {
+		Size = UDim2.new(1, -(textX + 26), 0, hasDesc and 22 or 28),
+		Position = UDim2.fromOffset(textX, hasDesc and 2 or 0),
+		TextSize = cfg.TextSize or 16,
+		TextXAlignment = ToEnum(Enum.TextXAlignment, cfg.TextXAlignment, Enum.TextXAlignment.Left),
 		TextTruncate = Enum.TextTruncate.AtEnd,
 	})
+	if hasDesc then
+		Text(head, cfg.Desc, {
+			Size = UDim2.new(1, -(textX + 26), 0, 16),
+			Position = UDim2.fromOffset(textX, 24),
+			Weight = "Regular",
+			TextSize = 13,
+			TextTransparency = 0.4,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+		})
+	end
 	local arrow = Text(head, "▾", {
-		Size = UDim2.fromOffset(20, 26),
-		Position = UDim2.new(1, -20, 0, 0),
+		Size = UDim2.fromOffset(20, 28),
+		Position = UDim2.new(1, -22, 0.5, -14),
 		TextXAlignment = Enum.TextXAlignment.Center,
-		Theme = { TextColor3 = "SubText" },
+		Theme = { TextColor3 = "Icon" },
 	})
 	local body = New("Frame", {
 		Name = "Body",
@@ -2066,7 +2768,7 @@ function Container:Section(cfg)
 		LayoutOrder = 1,
 		Parent = wrapper,
 	})
-	List(body, 8)
+	List(body, 6)
 
 	local section = setmetatable({
 		Type = "Section",
@@ -2093,7 +2795,7 @@ function Container:Section(cfg)
 		render()
 	end
 	function section:SetTitle(value)
-		head:FindFirstChildWhichIsA("TextLabel").Text = tostring(value)
+		titleLabel.Text = tostring(value)
 	end
 	function section:Destroy()
 		wrapper:Destroy()
@@ -2114,11 +2816,12 @@ local function CreateTab(window, parent, cfg)
 	local tab = setmetatable({}, TabClass)
 	tab.Type = "Tab"
 	tab.Title = tostring(cfg.Title or "Tab")
+	tab.Desc = cfg.Desc
 	tab._window = window
 
 	local button = New("TextButton", {
 		Name = tab.Title,
-		Size = UDim2.new(1, 0, 0, 34),
+		Size = UDim2.new(1, 0, 0, 38),
 		BackgroundTransparency = 1,
 		Text = "",
 		AutoButtonColor = false,
@@ -2126,35 +2829,27 @@ local function CreateTab(window, parent, cfg)
 		Theme = { BackgroundColor3 = "Accent" },
 		Parent = parent,
 	})
-	Corner(button, 8)
-
-	local indicator = New("Frame", {
-		Name = "Indicator",
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, 2, 0.5, 0),
-		Size = UDim2.fromOffset(3, 0),
-		Theme = { BackgroundColor3 = "Accent" },
-		Parent = button,
-	})
-	Corner(indicator, 2)
+	Corner(button, 10)
+	local outline = Stroke(button, "Outline", 1, 1)
 
 	local holder = New("Frame", {
 		BackgroundTransparency = 1,
 		Size = UDim2.fromScale(1, 1),
 		Parent = button,
 	})
-	Pad(holder, 0, 8, 0, 12)
-	List(holder, 8, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
-	local icon = MakeIcon(holder, cfg.Icon, 18)
+	Pad(holder, 0, 10, 0, 12)
+	List(holder, 10, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
+	local icon = MakeIcon(holder, cfg.Icon, 18, "Text", cfg.IconThemed)
 	if icon then
 		icon.LayoutOrder = 1
 	end
 	local label = Text(holder, tab.Title, {
-		Size = UDim2.new(1, icon and -26 or 0, 1, 0),
+		Size = UDim2.new(1, icon and -28 or 0, 1, 0),
 		TextTruncate = Enum.TextTruncate.AtEnd,
 		LayoutOrder = 2,
-		Theme = { TextColor3 = "SubText" },
+		TextTransparency = 0.45,
 	})
+	IconAlpha(icon, 0.45)
 
 	local page = New("ScrollingFrame", {
 		Name = tab.Title,
@@ -2163,15 +2858,16 @@ local function CreateTab(window, parent, cfg)
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		ScrollBarThickness = 3,
+		ScrollBarImageTransparency = 0.5,
 		CanvasSize = UDim2.new(),
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
 		Visible = false,
-		Theme = { ScrollBarImageColor3 = "SubText" },
+		Theme = { ScrollBarImageColor3 = "Icon" },
 		Parent = window._content,
 	})
-	Pad(page, 4, 14, 4, 14)
-	List(page, 8)
+	Pad(page, 4, 12, 4, 12)
+	List(page, 6)
 
 	tab.Button = button
 	tab.Page = page
@@ -2179,6 +2875,12 @@ local function CreateTab(window, parent, cfg)
 	tab._scroll = page
 
 	local selected = false
+	local locked = cfg.Locked == true
+
+	local function dim()
+		return locked and 0.7 or (selected and 0 or 0.45)
+	end
+
 	function tab:_SetActive(active)
 		selected = active
 		page.Visible = active
@@ -2186,15 +2888,10 @@ local function CreateTab(window, parent, cfg)
 			page.Position = UDim2.fromOffset(0, 18)
 			Tween(page, { Position = UDim2.fromOffset(0, 6) }, 0.25)
 		end
-		Tween(button, { BackgroundTransparency = active and 0.88 or 1 }, 0.18)
-		Tween(indicator, { Size = UDim2.fromOffset(3, active and 16 or 0) }, 0.2)
-		Tween(label, { TextColor3 = active and NekoUI.Theme.Text or NekoUI.Theme.SubText }, 0.18)
-		-- biar warna label ikut theme: ganti binding kalau status berubah
-		for _, entry in ipairs(Bound) do
-			if entry[1] == label then
-				entry[3] = active and "Text" or "SubText"
-			end
-		end
+		Tween(button, { BackgroundTransparency = active and 0 or 1 }, 0.18)
+		Tween(outline, { Transparency = active and 0.88 or 1 }, 0.18)
+		Tween(label, { TextTransparency = dim() }, 0.18)
+		IconAlpha(icon, dim(), 0.18)
 	end
 
 	function tab:Select()
@@ -2203,6 +2900,29 @@ local function CreateTab(window, parent, cfg)
 	function tab:SetTitle(value)
 		tab.Title = tostring(value)
 		label.Text = tab.Title
+	end
+	function tab:SetDesc(value)
+		tab.Desc = value
+	end
+	function tab:Lock()
+		locked = true
+		Tween(label, { TextTransparency = dim() }, 0.15)
+		IconAlpha(icon, dim(), 0.15)
+	end
+	function tab:Unlock()
+		locked = false
+		Tween(label, { TextTransparency = dim() }, 0.15)
+		IconAlpha(icon, dim(), 0.15)
+	end
+	function tab:ScrollToTheElement(index)
+		for _, child in ipairs(page:GetChildren()) do
+			if child:IsA("GuiObject") and child.LayoutOrder == index then
+				local y = child.AbsolutePosition.Y - page.AbsolutePosition.Y + page.CanvasPosition.Y - 4
+				Tween(page, { CanvasPosition = Vector2.new(0, math.max(y, 0)) }, 0.3)
+				return true
+			end
+		end
+		return false
 	end
 	function tab:Destroy()
 		for i, t in ipairs(window.Tabs) do
@@ -2222,8 +2942,8 @@ local function CreateTab(window, parent, cfg)
 	end
 
 	button.MouseEnter:Connect(function()
-		if not selected then
-			Tween(button, { BackgroundTransparency = 0.94 }, 0.12)
+		if not selected and not locked then
+			Tween(button, { BackgroundTransparency = 0.55 }, 0.12)
 		end
 	end)
 	button.MouseLeave:Connect(function()
@@ -2232,11 +2952,19 @@ local function CreateTab(window, parent, cfg)
 		end
 	end)
 	button.MouseButton1Click:Connect(function()
+		if locked then
+			return
+		end
 		window:SelectTab(tab)
 	end)
 
+	if locked then
+		Tween(label, { TextTransparency = 0.7 }, 0)
+		IconAlpha(icon, 0.7)
+	end
+
 	window.Tabs[#window.Tabs + 1] = tab
-	if #window.Tabs == 1 then
+	if #window.Tabs == 1 and not locked then
 		window:SelectTab(tab)
 	end
 	return tab
@@ -2284,7 +3012,7 @@ function WindowClass:Section(cfg)
 	List(wrapper, 4)
 
 	local head = New("TextButton", {
-		Size = UDim2.new(1, 0, 0, 24),
+		Size = UDim2.new(1, 0, 0, 26),
 		BackgroundTransparency = 1,
 		Text = "",
 		AutoButtonColor = false,
@@ -2294,17 +3022,16 @@ function WindowClass:Section(cfg)
 	Text(head, cfg.Title or "Section", {
 		Size = UDim2.new(1, -24, 1, 0),
 		Position = UDim2.fromOffset(8, 0),
-		Font = Enum.Font.GothamBold,
-		TextSize = 12,
+		TextSize = 13,
+		TextTransparency = 0.4,
 		TextTruncate = Enum.TextTruncate.AtEnd,
-		Theme = { TextColor3 = "SubText" },
 	})
 	local arrow = Text(head, "▾", {
-		Size = UDim2.fromOffset(18, 24),
+		Size = UDim2.fromOffset(18, 26),
 		Position = UDim2.new(1, -20, 0, 0),
 		TextXAlignment = Enum.TextXAlignment.Center,
 		TextSize = 12,
-		Theme = { TextColor3 = "SubText" },
+		Theme = { TextColor3 = "Icon" },
 	})
 	local items = New("Frame", {
 		BackgroundTransparency = 1,
@@ -2341,15 +3068,15 @@ function WindowClass:Divider()
 		Name = "Divider",
 		Size = UDim2.new(1, 0, 0, 1),
 		BorderSizePixel = 0,
-		BackgroundTransparency = 0.4,
+		BackgroundTransparency = 0.9,
 		LayoutOrder = NextOrder(self._tabList),
-		Theme = { BackgroundColor3 = "Stroke" },
+		Theme = { BackgroundColor3 = "Outline" },
 		Parent = self._tabList,
 	})
 end
 
 function WindowClass:SetTheme(name)
-	return NekoUI:SetTheme(name)
+	return NexCat:SetTheme(name)
 end
 
 function WindowClass:SetTitle(value)
@@ -2357,8 +3084,58 @@ function WindowClass:SetTitle(value)
 	self._titleLabel.Text = self.Title
 end
 
+function WindowClass:SetAuthor(value)
+	self.Author = value
+	self._authorLabel.Text = tostring(value or "")
+	self._authorLabel.Visible = value ~= nil and value ~= ""
+end
+
+function WindowClass:SetSize(size)
+	local viewport = ViewportSize()
+	local width = math.min(size.X.Offset, viewport.X - 40)
+	local height = math.min(size.Y.Offset, viewport.Y - 40)
+	self.Frame.Size = UDim2.fromOffset(width, height)
+end
+
+function WindowClass:SetUIScale(value)
+	self._baseScale = value or 1
+	if self.Opened then
+		Tween(self._scale, { Scale = self._baseScale }, 0.2)
+	end
+end
+
 function WindowClass:SetToggleKey(key)
 	self.ToggleKey = key
+end
+
+function WindowClass:SetPanelBackground(visible)
+	if self._panel then
+		Tween(self._panel, { BackgroundTransparency = visible and PanelTransparency or 1 }, 0.2)
+	end
+end
+
+function WindowClass:LockAll()
+	for _, element in ipairs(self._elements) do
+		if element.Lock and element.Element and element.Element.Parent then
+			element:Lock()
+		end
+	end
+end
+
+function WindowClass:UnlockAll()
+	for _, element in ipairs(self._elements) do
+		if element.Unlock and element.Element and element.Element.Parent then
+			element:Unlock()
+		end
+	end
+end
+
+function WindowClass:OnOpen(callback)
+	self._openCallbacks[#self._openCallbacks + 1] = callback
+end
+
+function WindowClass:OnClose(callback)
+	self._closeCallbacks[#self._closeCallbacks + 1] = callback
 end
 
 function WindowClass:OnDestroy(callback)
@@ -2374,7 +3151,10 @@ function WindowClass:Show()
 	if self.OpenButton then
 		self.OpenButton.Visible = false
 	end
-	Tween(self._scale, { Scale = 1 }, 0.25, Enum.EasingStyle.Back)
+	Tween(self._scale, { Scale = self._baseScale }, 0.25, Enum.EasingStyle.Back)
+	for _, callback in ipairs(self._openCallbacks) do
+		Fire(callback)
+	end
 end
 
 function WindowClass:Hide()
@@ -2383,7 +3163,7 @@ function WindowClass:Hide()
 	end
 	self.Opened = false
 	self:_ClosePopup()
-	Tween(self._scale, { Scale = 0.9 }, 0.15)
+	Tween(self._scale, { Scale = self._baseScale * 0.9 }, 0.15)
 	if self.OpenButton then
 		self.OpenButton.Visible = self._openEnabled
 	end
@@ -2392,6 +3172,9 @@ function WindowClass:Hide()
 			self.Frame.Visible = false
 		end
 	end)
+	for _, callback in ipairs(self._closeCallbacks) do
+		Fire(callback)
+	end
 end
 
 function WindowClass:Toggle()
@@ -2399,6 +3182,43 @@ function WindowClass:Toggle()
 		self:Hide()
 	else
 		self:Show()
+	end
+end
+
+-- alias gaya WindUI
+function WindowClass:Open()
+	self:Show()
+end
+
+function WindowClass:Close()
+	local window = self
+	self:Hide()
+	return {
+		Destroy = function()
+			window:Destroy()
+		end,
+	}
+end
+
+function WindowClass:ToggleFullscreen()
+	if self.Destroyed then
+		return
+	end
+	local main = self.Frame
+	self:_ClosePopup()
+	if not self.Fullscreen then
+		self._restore = { Size = main.Size, Position = main.Position }
+		self.Fullscreen = true
+		Tween(main, { Size = UDim2.new(1, -24, 1, -24), Position = UDim2.fromScale(0.5, 0.5) }, 0.25)
+	else
+		self.Fullscreen = false
+		local restore = self._restore
+		if restore then
+			Tween(main, { Size = restore.Size, Position = restore.Position }, 0.25)
+		end
+	end
+	if self._grip then
+		self._grip.Visible = not self.Fullscreen
 	end
 end
 
@@ -2413,16 +3233,87 @@ function WindowClass:Destroy()
 	for _, callback in ipairs(self._destroyCallbacks) do
 		Fire(callback)
 	end
-	for i, w in ipairs(NekoUI.Windows) do
+	for i, w in ipairs(NexCat.Windows) do
 		if w == self then
-			table.remove(NekoUI.Windows, i)
+			table.remove(NexCat.Windows, i)
 			break
 		end
 	end
 	self.Gui:Destroy()
 end
 
+-- chip kecil di topbar, sama seperti Window:Tag di WindUI
+-- cfg: Title, Icon, Color (Color3), Border
+function WindowClass:Tag(cfg)
+	cfg = cfg or {}
+	local color = cfg.Color or NexCat.Theme.Button
+	local tag = New("Frame", {
+		Name = "Tag",
+		Size = UDim2.fromOffset(0, 24),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundColor3 = color,
+		LayoutOrder = 10 + #self._tags,
+		Parent = self._titleHolder,
+	})
+	Corner(tag, 8)
+	Pad(tag, 0, 9, 0, 9)
+	List(tag, 5, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Center)
+	if cfg.Border then
+		Stroke(tag, "Outline", 1, 0.8)
+	end
+	local textColor = Luminance(color) > 0.55 and Color3.new(0, 0, 0) or Color3.new(1, 1, 1)
+	local icon = MakeIcon(tag, cfg.Icon, 14, nil)
+	if icon then
+		icon.LayoutOrder = 1
+	end
+	local label = Text(tag, cfg.Title or "Tag", {
+		Size = UDim2.fromOffset(0, 24),
+		AutomaticSize = Enum.AutomaticSize.X,
+		TextSize = 12,
+		TextColor3 = textColor,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		LayoutOrder = 2,
+		Theme = {},
+	})
+	label.TextColor3 = textColor
+
+	local obj = { Type = "Tag", Element = tag }
+	function obj:SetTitle(value)
+		label.Text = tostring(value)
+	end
+	function obj:SetColor(value)
+		tag.BackgroundColor3 = value
+		label.TextColor3 = Luminance(value) > 0.55 and Color3.new(0, 0, 0) or Color3.new(1, 1, 1)
+	end
+	function obj:Destroy()
+		tag:Destroy()
+	end
+	self._tags[#self._tags + 1] = obj
+	return obj
+end
+
+-- tombol kecil di topbar: Window:CreateTopbarButton("nama", "icon", callback, order)
+function WindowClass:CreateTopbarButton(name, icon, callback, order)
+	local button = self._makeControl(order or 0)
+	local glyph = MakeIcon(button, icon, 18, "Icon")
+	if glyph then
+		glyph.AnchorPoint = Vector2.new(0.5, 0.5)
+		glyph.Position = UDim2.fromScale(0.5, 0.5)
+		glyph.ZIndex = 4
+	end
+	button.MouseButton1Click:Connect(function()
+		Fire(callback)
+	end)
+	local obj = { Type = "TopbarButton", Element = button }
+	function obj:Destroy()
+		button:Destroy()
+	end
+	self.TopbarButtons[tostring(name)] = obj
+	return obj
+end
+
 -- tombol bulat/pill untuk buka window saat disembunyikan
+-- cfg: Title, Icon, Enabled, Draggable, OnlyMobile, Scale, CornerRadius (UDim), StrokeThickness, Color (ColorSequence)
 function WindowClass:EditOpenButton(cfg)
 	cfg = cfg or {}
 	local window = self
@@ -2430,34 +3321,48 @@ function WindowClass:EditOpenButton(cfg)
 		self.OpenButton:Destroy()
 		self.OpenButton = nil
 	end
-	self._openEnabled = cfg.Enabled ~= false
+	local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+	self._openEnabled = cfg.Enabled ~= false and (cfg.OnlyMobile ~= true or isMobile)
 
 	local button = New("TextButton", {
 		Name = "OpenButton",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = self._openPosition or UDim2.new(0.5, 0, 0, 14),
-		Size = UDim2.fromOffset(0, 38),
+		Size = UDim2.fromOffset(0, 42),
 		AutomaticSize = Enum.AutomaticSize.X,
 		Text = "",
 		AutoButtonColor = false,
 		Visible = (not self.Opened) and self._openEnabled,
 		ZIndex = 30,
-		Theme = { BackgroundColor3 = "Surface" },
+		Theme = { BackgroundColor3 = "Dialog" },
 		Parent = self.Gui,
 	})
-	Corner(button, 19)
-	Stroke(button, "Accent", 1, 0.3)
-	Pad(button, 0, 14, 0, 12)
+	New("UICorner", { CornerRadius = cfg.CornerRadius or UDim.new(0, 21), Parent = button })
+	local stroke = New("UIStroke", {
+		Thickness = cfg.StrokeThickness or 2,
+		Color = Color3.new(1, 1, 1),
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Parent = button,
+	})
+	New("UIGradient", {
+		Color = cfg.Color or ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(110, 110, 110)),
+		Rotation = 45,
+		Parent = stroke,
+	})
+	if cfg.Scale then
+		New("UIScale", { Scale = cfg.Scale, Parent = button })
+	end
+	Pad(button, 0, 16, 0, 14)
 	List(button, 8, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Center)
-	local icon = MakeIcon(button, cfg.Icon or self._iconName or "cat", 20)
+	local icon = MakeIcon(button, cfg.Icon or self._iconName, 22, "Text")
 	if icon then
 		icon.LayoutOrder = 1
 	end
 	if cfg.Title ~= false then
 		Text(button, cfg.Title or self.Title, {
-			Size = UDim2.fromOffset(0, 38),
+			Size = UDim2.fromOffset(0, 42),
 			AutomaticSize = Enum.AutomaticSize.X,
-			Font = Enum.Font.GothamBold,
+			TextSize = 15,
 			LayoutOrder = 2,
 		})
 	end
@@ -2494,40 +3399,54 @@ end
 -- CreateWindow
 -- ============================================================
 
-function NekoUI:CreateWindow(cfg)
+function NexCat:CreateWindow(cfg)
 	cfg = cfg or {}
 	if cfg.Theme and self.Themes[cfg.Theme] then
 		self:SetTheme(cfg.Theme)
 	end
 
+	local topbarCfg = type(cfg.Topbar) == "table" and cfg.Topbar or {}
+	local topHeight = topbarCfg.Height or 52
+	local mac = topbarCfg.ButtonsType == "Mac"
+	local radius = cfg.Radius or 16
+
 	local window = setmetatable({
-		Title = tostring(cfg.Title or "NekoUI"),
+		Title = tostring(cfg.Title or "NexCat"),
+		Author = cfg.Author,
 		Flags = {},
 		Tabs = {},
 		Opened = true,
 		Destroyed = false,
+		Fullscreen = false,
 		Transparent = cfg.Transparent == true,
-		Folder = cfg.Folder or "NekoUI",
+		Folder = cfg.Folder or "NexCat",
 		ToggleKey = cfg.ToggleKey or Enum.KeyCode.RightShift,
+		Radius = radius,
+		ElementRadius = cfg.NewElements and 15 or 12,
+		TopbarButtons = {},
 		_conns = {},
-		_surfaces = {},
+		_elements = {},
+		_tags = {},
+		_openCallbacks = {},
+		_closeCallbacks = {},
 		_destroyCallbacks = {},
-		_iconName = cfg.Icon or "cat",
+		_iconName = cfg.Icon or "nexcat",
 		_openEnabled = true,
+		_baseScale = 1,
 	}, WindowClass)
 	window.ConfigManager = NewConfigManager(window)
 
 	local viewport = ViewportSize()
-	local size = cfg.Size or UDim2.fromOffset(620, 440)
+	local size = cfg.Size or UDim2.fromOffset(580, 460)
 	local width = math.min(size.X.Offset, viewport.X - 40)
 	local height = math.min(size.Y.Offset, viewport.Y - 40)
-	local minSize = cfg.MinSize or Vector2.new(460, 320)
-	local maxSize = cfg.MaxSize or Vector2.new(1000, 700)
+	local minSize = cfg.MinSize or Vector2.new(560, 350)
+	local maxSize = cfg.MaxSize or Vector2.new(850, 560)
 	local minW = math.min(minSize.X, width)
 	local minH = math.min(minSize.Y, height)
-	local sideWidth = math.min(cfg.SideBarWidth or 190, math.floor(width * 0.34))
+	local sideWidth = math.min(cfg.SideBarWidth or 200, math.floor(width * 0.34))
 
-	local gui = NewGui("NekoUI", 100)
+	local gui = NewGui("NexCat", 100)
 	window.Gui = gui
 
 	local main = New("Frame", {
@@ -2535,12 +3454,12 @@ function NekoUI:CreateWindow(cfg)
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromOffset(width, height),
+		BackgroundTransparency = window.Transparent and NexCat.TransparencyValue or 0,
 		Theme = { BackgroundColor3 = "Background" },
 		Parent = gui,
 	})
-	Corner(main, 12)
-	Stroke(main, "Stroke", 1, 0)
-	window:_Surface(main, 0.12)
+	Corner(main, radius)
+	Stroke(main, "Outline", 1, 0.9)
 	window.Frame = main
 	window._scale = New("UIScale", { Scale = 0.9, Parent = main })
 	Tween(window._scale, { Scale = 1 }, 0.3, Enum.EasingStyle.Back)
@@ -2548,7 +3467,7 @@ function NekoUI:CreateWindow(cfg)
 	-- ---------- Topbar ----------
 	local top = New("Frame", {
 		Name = "Topbar",
-		Size = UDim2.new(1, 0, 0, 46),
+		Size = UDim2.new(1, 0, 0, topHeight),
 		BackgroundTransparency = 1,
 		Parent = main,
 	})
@@ -2562,102 +3481,88 @@ function NekoUI:CreateWindow(cfg)
 	})
 	New("Frame", {
 		Name = "Line",
+		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.fromScale(0, 1),
 		Size = UDim2.new(1, 0, 0, 1),
 		BorderSizePixel = 0,
-		BackgroundTransparency = 0.3,
-		Theme = { BackgroundColor3 = "Stroke" },
+		BackgroundTransparency = 0.92,
+		Theme = { BackgroundColor3 = "Outline" },
 		Parent = top,
 	})
 
+	local titleLeft = mac and 90 or 18
 	local titleHolder = New("Frame", {
+		Name = "Title",
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(14, 0),
-		Size = UDim2.new(1, -110, 1, 0),
+		ClipsDescendants = true,
+		Position = UDim2.fromOffset(titleLeft, 0),
+		Size = UDim2.new(1, -(titleLeft + 140), 1, 0),
 		Parent = top,
 	})
 	List(titleHolder, 8, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
-	local titleIcon = MakeIcon(titleHolder, cfg.Icon or "cat", 22)
+	window._titleHolder = titleHolder
+
+	local titleIcon = MakeIcon(titleHolder, cfg.Icon or "nexcat", cfg.IconSize or 22, "Text", cfg.IconThemed)
 	if titleIcon then
 		titleIcon.LayoutOrder = 1
 	end
 	window._titleLabel = Text(titleHolder, window.Title, {
-		Size = UDim2.fromOffset(0, 20),
+		Size = UDim2.fromOffset(0, 22),
 		AutomaticSize = Enum.AutomaticSize.X,
-		Font = Enum.Font.GothamBold,
-		TextSize = 15,
+		TextSize = 16,
 		LayoutOrder = 2,
 	})
-	if cfg.Author and cfg.Author ~= "" then
-		Text(titleHolder, tostring(cfg.Author), {
-			Size = UDim2.fromOffset(0, 20),
-			AutomaticSize = Enum.AutomaticSize.X,
-			Font = Enum.Font.Gotham,
-			TextSize = 12,
-			LayoutOrder = 3,
-			Theme = { TextColor3 = "SubText" },
-		})
-	end
+	window._authorLabel = Text(titleHolder, tostring(cfg.Author or ""), {
+		Size = UDim2.fromOffset(0, 22),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Weight = "Regular",
+		TextSize = 13,
+		TextTransparency = 0.4,
+		Visible = cfg.Author ~= nil and cfg.Author ~= "",
+		LayoutOrder = 3,
+	})
 
 	local controls = New("Frame", {
+		Name = "Controls",
 		BackgroundTransparency = 1,
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -10, 0, 0),
-		Size = UDim2.fromOffset(70, 46),
+		Position = UDim2.new(1, -12, 0, 0),
+		Size = UDim2.fromOffset(0, topHeight),
+		AutomaticSize = Enum.AutomaticSize.X,
+		ZIndex = 3,
 		Parent = top,
 	})
-	List(controls, 6, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Right, Enum.VerticalAlignment.Center)
+	List(controls, 4, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Right, Enum.VerticalAlignment.Center)
+
+	-- judul menyesuaikan lebar tombol topbar yang ditambah user
+	local function layoutTitle()
+		titleHolder.Size = UDim2.new(1, -(titleLeft + controls.AbsoluteSize.X + 24), 1, 0)
+	end
+	controls:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutTitle)
 
 	local function ControlButton(order)
 		local b = New("TextButton", {
-			Size = UDim2.fromOffset(30, 30),
+			Size = UDim2.fromOffset(32, 32),
 			BackgroundTransparency = 1,
 			Text = "",
 			AutoButtonColor = false,
 			LayoutOrder = order,
 			ZIndex = 3,
-			Theme = { BackgroundColor3 = "ElementHover" },
+			Theme = { BackgroundColor3 = "Text" },
 			Parent = controls,
 		})
-		Corner(b, 8)
+		Corner(b, 9)
 		b.MouseEnter:Connect(function()
-			Tween(b, { BackgroundTransparency = 0 }, 0.12)
+			Tween(b, { BackgroundTransparency = 0.92 }, 0.12)
 		end)
 		b.MouseLeave:Connect(function()
 			Tween(b, { BackgroundTransparency = 1 }, 0.12)
 		end)
 		return b
 	end
+	window._makeControl = ControlButton
 
-	local minimize = ControlButton(1)
-	local minLine = New("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(12, 2),
-		BorderSizePixel = 0,
-		Theme = { BackgroundColor3 = "SubText" },
-		Parent = minimize,
-	})
-	Corner(minLine, 1)
-
-	local close = ControlButton(2)
-	for _, rotation in ipairs({ 45, -45 }) do
-		local bar = New("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromOffset(14, 2),
-			Rotation = rotation,
-			BorderSizePixel = 0,
-			Theme = { BackgroundColor3 = "SubText" },
-			Parent = close,
-		})
-		Corner(bar, 1)
-	end
-
-	minimize.MouseButton1Click:Connect(function()
-		window:Hide()
-	end)
-	close.MouseButton1Click:Connect(function()
+	local function requestClose()
 		if cfg.CloseConfirm == false then
 			window:Destroy()
 		else
@@ -2665,7 +3570,7 @@ function NekoUI:CreateWindow(cfg)
 				Title = "Tutup window?",
 				Content = "Interface ini akan dihapus dari layar.",
 				Buttons = {
-					{ Title = "Batal" },
+					{ Title = "Batal", Variant = "Secondary" },
 					{
 						Title = "Tutup",
 						Variant = "Danger",
@@ -2676,12 +3581,80 @@ function NekoUI:CreateWindow(cfg)
 				},
 			})
 		end
-	end)
+	end
+
+	if mac then
+		local dots = New("Frame", {
+			Name = "MacButtons",
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(18, 0),
+			Size = UDim2.new(0, 58, 1, 0),
+			ZIndex = 3,
+			Parent = top,
+		})
+		List(dots, 8, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
+		local function dot(color, order, action)
+			local d = New("TextButton", {
+				Size = UDim2.fromOffset(14, 14),
+				BackgroundColor3 = color,
+				Text = "",
+				AutoButtonColor = false,
+				LayoutOrder = order,
+				ZIndex = 4,
+				Parent = dots,
+			})
+			Corner(d, 7)
+			d.MouseButton1Click:Connect(action)
+		end
+		dot(Color3.fromRGB(255, 95, 87), 1, requestClose)
+		dot(Color3.fromRGB(254, 188, 46), 2, function()
+			window:Hide()
+		end)
+		dot(Color3.fromRGB(40, 200, 64), 3, function()
+			window:ToggleFullscreen()
+		end)
+	else
+		local minimize = ControlButton(997)
+		local minLine = New("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(12, 2),
+			BorderSizePixel = 0,
+			Theme = { BackgroundColor3 = "Icon" },
+			Parent = minimize,
+		})
+		Corner(minLine, 1)
+		minimize.MouseButton1Click:Connect(function()
+			window:Hide()
+		end)
+
+		local fullscreen = ControlButton(998)
+		local fullBox = New("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(12, 12),
+			BackgroundTransparency = 1,
+			Parent = fullscreen,
+		})
+		Corner(fullBox, 3)
+		Stroke(fullBox, "Icon", 1.6, 0)
+		fullscreen.MouseButton1Click:Connect(function()
+			window:ToggleFullscreen()
+		end)
+
+		local close = ControlButton(999)
+		CloseGlyph(close, 14, "Icon")
+		close.MouseButton1Click:Connect(requestClose)
+	end
+	layoutTitle()
 
 	-- geser window
 	local dragStart, dragOrigin
 	if cfg.Draggable ~= false then
 		Drag(dragHandle, function(pos)
+			if window.Fullscreen then
+				return
+			end
 			local d = pos - dragStart
 			local vp = gui.AbsoluteSize
 			local x = math.clamp(dragOrigin.X.Offset + d.X, -vp.X / 2, vp.X / 2)
@@ -2697,8 +3670,8 @@ function NekoUI:CreateWindow(cfg)
 	-- ---------- Body ----------
 	local body = New("Frame", {
 		Name = "Body",
-		Position = UDim2.fromOffset(0, 47),
-		Size = UDim2.new(1, 0, 1, -47),
+		Position = UDim2.fromOffset(0, topHeight + 1),
+		Size = UDim2.new(1, 0, 1, -(topHeight + 1)),
 		BackgroundTransparency = 1,
 		Parent = main,
 	})
@@ -2709,49 +3682,50 @@ function NekoUI:CreateWindow(cfg)
 		BackgroundTransparency = 1,
 		Parent = body,
 	})
-	New("Frame", {
-		Name = "Divider",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.fromScale(1, 0),
-		Size = UDim2.new(0, 1, 1, 0),
-		BorderSizePixel = 0,
-		BackgroundTransparency = 0.3,
-		Theme = { BackgroundColor3 = "Stroke" },
-		Parent = sidebar,
-	})
+	if cfg.HidePanelBackground == true then
+		New("Frame", {
+			Name = "Divider",
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.fromScale(1, 0),
+			Size = UDim2.new(0, 1, 1, 0),
+			BorderSizePixel = 0,
+			BackgroundTransparency = 0.92,
+			Theme = { BackgroundColor3 = "Outline" },
+			Parent = sidebar,
+		})
+	end
 	local sideInner = New("Frame", {
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, -1, 1, 0),
+		Size = UDim2.fromScale(1, 1),
 		Parent = sidebar,
 	})
-	Pad(sideInner, 8)
+	Pad(sideInner, 10, 4, 10, 10)
 	List(sideInner, 8)
 
 	local reserved = 0
 	if cfg.HideSearchBar ~= true then
-		reserved = reserved + 40
+		reserved = reserved + 42
 		local searchHolder = New("Frame", {
 			Name = "Search",
-			Size = UDim2.new(1, 0, 0, 32),
+			Size = UDim2.new(1, 0, 0, 34),
 			LayoutOrder = 1,
-			Theme = { BackgroundColor3 = "Element" },
 			Parent = sideInner,
 		})
-		Corner(searchHolder, 8)
-		Stroke(searchHolder, "Stroke", 1, 0.4)
+		FieldStyle(searchHolder, 10)
+		SearchGlyph(searchHolder, "Icon")
 		local searchBox = New("TextBox", {
-			Size = UDim2.fromScale(1, 1),
+			Position = UDim2.fromOffset(32, 0),
+			Size = UDim2.new(1, -40, 1, 0),
 			BackgroundTransparency = 1,
 			Text = "",
 			PlaceholderText = "Cari tab...",
 			ClearTextOnFocus = false,
-			Font = Enum.Font.Gotham,
-			TextSize = 13,
+			Font = FontOf("Regular"),
+			TextSize = 14,
 			TextXAlignment = Enum.TextXAlignment.Left,
-			Theme = { TextColor3 = "Text", PlaceholderColor3 = "SubText" },
+			Theme = { TextColor3 = "Text", PlaceholderColor3 = "Placeholder" },
 			Parent = searchHolder,
 		})
-		Pad(searchBox, 0, 10, 0, 10)
 		searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 			local q = searchBox.Text:lower()
 			for _, tab in ipairs(window.Tabs) do
@@ -2764,8 +3738,11 @@ function NekoUI:CreateWindow(cfg)
 	if userCfg == true then
 		userCfg = {}
 	end
+	if type(userCfg) == "table" and userCfg.Enabled == false then
+		userCfg = nil
+	end
 	if userCfg then
-		reserved = reserved + 52
+		reserved = reserved + 56
 	end
 
 	local tabList = New("ScrollingFrame", {
@@ -2773,7 +3750,7 @@ function NekoUI:CreateWindow(cfg)
 		Size = UDim2.new(1, 0, 1, -reserved),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		ScrollBarThickness = 0,
+		ScrollBarThickness = cfg.ScrollBarEnabled and 2 or 0,
 		CanvasSize = UDim2.new(),
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
@@ -2786,37 +3763,34 @@ function NekoUI:CreateWindow(cfg)
 	if userCfg then
 		local card = New("Frame", {
 			Name = "User",
-			Size = UDim2.new(1, 0, 0, 44),
+			Size = UDim2.new(1, 0, 0, 48),
 			LayoutOrder = 3,
-			Theme = { BackgroundColor3 = "Element" },
 			Parent = sideInner,
 		})
-		Corner(card, 8)
-		Stroke(card, "Stroke", 1, 0.4)
-		window:_Surface(card, 0.3)
+		FieldStyle(card, 12)
 		local avatar = New("ImageLabel", {
 			Position = UDim2.fromOffset(7, 7),
-			Size = UDim2.fromOffset(30, 30),
-			Theme = { BackgroundColor3 = "ElementHover" },
+			Size = UDim2.fromOffset(34, 34),
+			Theme = { BackgroundColor3 = "Button" },
 			Parent = card,
 		})
-		Corner(avatar, 15)
+		Corner(avatar, 17)
 		local anonymous = userCfg.Anonymous == true
 		local display = anonymous and "Guest" or (LocalPlayer and LocalPlayer.DisplayName or "Player")
 		local username = anonymous and "@hidden" or (LocalPlayer and "@" .. LocalPlayer.Name or "")
 		Text(card, display, {
-			Position = UDim2.fromOffset(44, 5),
-			Size = UDim2.new(1, -50, 0, 16),
-			TextSize = 13,
+			Position = UDim2.fromOffset(48, 6),
+			Size = UDim2.new(1, -54, 0, 18),
+			TextSize = 14,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 		})
 		Text(card, username, {
-			Position = UDim2.fromOffset(44, 22),
-			Size = UDim2.new(1, -50, 0, 14),
-			TextSize = 11,
-			Font = Enum.Font.Gotham,
+			Position = UDim2.fromOffset(48, 24),
+			Size = UDim2.new(1, -54, 0, 16),
+			TextSize = 12,
+			Weight = "Regular",
+			TextTransparency = 0.4,
 			TextTruncate = Enum.TextTruncate.AtEnd,
-			Theme = { TextColor3 = "SubText" },
 		})
 		if not anonymous and LocalPlayer then
 			task.spawn(function()
@@ -2846,14 +3820,22 @@ function NekoUI:CreateWindow(cfg)
 		end
 	end
 
-	window._content = New("Frame", {
+	-- panel konten (kotak sedikit lebih terang di kanan sidebar, seperti WindUI)
+	local panel = New("Frame", {
 		Name = "Content",
 		Position = UDim2.fromOffset(sideWidth, 0),
-		Size = UDim2.new(1, -sideWidth, 1, 0),
-		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -(sideWidth + 8), 1, -8),
+		BackgroundTransparency = cfg.HidePanelBackground == true and 1 or PanelTransparency,
 		ClipsDescendants = true,
+		Theme = { BackgroundColor3 = "Text" },
 		Parent = body,
 	})
+	Corner(panel, math.max(radius - 6, 8))
+	if cfg.HidePanelBackground ~= true then
+		Stroke(panel, "Outline", 1, 0.94)
+	end
+	window._content = panel
+	window._panel = panel
 
 	-- ---------- Resize ----------
 	if cfg.Resizable ~= false then
@@ -2868,6 +3850,7 @@ function NekoUI:CreateWindow(cfg)
 			ZIndex = 20,
 			Parent = main,
 		})
+		window._grip = grip
 		for _, spec in ipairs({ { 9, 14 }, { 13, 8 } }) do
 			local line = New("Frame", {
 				AnchorPoint = Vector2.new(0.5, 0.5),
@@ -2876,10 +3859,10 @@ function NekoUI:CreateWindow(cfg)
 				Rotation = -45,
 				BorderSizePixel = 0,
 				BackgroundTransparency = 0.3,
-				Theme = { BackgroundColor3 = "SubText" },
+				ZIndex = 21,
+				Theme = { BackgroundColor3 = "Icon" },
 				Parent = grip,
 			})
-			line.ZIndex = 21
 		end
 		local startPos, startSize, startPosition
 		Drag(grip, function(pos)
@@ -2915,11 +3898,11 @@ function NekoUI:CreateWindow(cfg)
 	end
 	window:EditOpenButton(openCfg)
 
-	NekoUI.Windows[#NekoUI.Windows + 1] = window
+	NexCat.Windows[#NexCat.Windows + 1] = window
 	return window
 end
 
-function NekoUI:Destroy()
+function NexCat:Destroy()
 	for i = #self.Windows, 1, -1 do
 		self.Windows[i]:Destroy()
 	end
@@ -2929,4 +3912,4 @@ function NekoUI:Destroy()
 	end
 end
 
-return NekoUI
+return NexCat
