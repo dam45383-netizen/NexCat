@@ -1,5 +1,5 @@
 --[[
-	NexCat v1.0.0
+	NexCat v1.1.0
 	Library UI Roblox (Luau) dengan tampilan & API ala WindUI.
 
 	Window, Tab, Section, Button, Toggle (Switch/Checkbox), Slider, Input, Dropdown,
@@ -11,13 +11,16 @@
 		local NexCat = require(path.to.NexCat)                -- Roblox Studio (ModuleScript)
 
 		local Window = NexCat:CreateWindow({
-			Title = "NexCat", -- don't change!
+			Title = "NexCat",
 			Author = "by kamu",
-			Folder = "NexCat", -- don't change!
+			AllowTitleEdit = false, -- default: nama window terkunci setelah dibuat
+			Folder = "NexCat",
+			Size = UDim2.fromOffset(580, 460),
 			Topbar = { Height = 52, ButtonsType = "Default" }, -- atau "Mac"
 		})
 		local Tab = Window:Tab({ Title = "Main", Icon = "home" })
-		Tab:Toggle({ Title = "Auto Farm", Callback = function(v) print(v) end })
+		Tab:Toggle({ Title = "Auto Farm", Desc = "Enable feature", Flag = "AutoFarm" })
+		Tab:Checkbox({ Title = "Extra option", Flag = "ExtraOption" })
 
 	Icon logo kucing disimpan sebagai base64 di bawah (LOGO_BASE64). Di executor yang punya
 	writefile + getcustomasset, logo otomatis ditulis jadi PNG lalu dipakai sebagai gambar.
@@ -27,7 +30,8 @@
 		Element yang mau disimpan harus punya Flag, contoh: Tab:Toggle({ Title = "Auto Farm", Flag = "AutoFarm" })
 		Window:SaveConfig() / Window:LoadConfig() / Window:DeleteConfig() / Window:GetConfigPath()
 		Tab:ConfigSection() -> tombol Save / Load / Delete + toggle Auto Save siap pakai
-		CreateWindow({ AutoLoad = true (default), AutoSave = false, AutoSaveInterval = 5, GameName = "Nama Game" })
+		CreateWindow({ AutoLoad = true (default), AutoSave = false, AutoSaveInterval = 5 })
+	Ukuran, posisi, dan UIScale window ikut masuk ke config. Nama file config diambil otomatis dari nama game.
 ]]
 
 local Players = game:GetService("Players")
@@ -43,7 +47,7 @@ end)
 local LocalPlayer = Players.LocalPlayer
 
 local NexCat = {
-	Version = "1.0.0",
+	Version = "1.1.0",
 	Windows = {},
 	TransparencyValue = 0.2,
 	Fonts = {
@@ -61,7 +65,21 @@ local TabClass = setmetatable({}, { __index = Container })
 TabClass.__index = TabClass
 
 local WindowClass = {}
-WindowClass.__index = WindowClass
+WindowClass.__index = function(self, key)
+	if key == "Title" then
+		return rawget(self, "_title")
+	end
+	return rawget(WindowClass, key)
+end
+WindowClass.__newindex = function(self, key, value)
+	if key == "Title" then
+		if rawget(self, "AllowTitleEdit") == true then
+			rawset(self, "_title", tostring(value))
+		end
+		return
+	end
+	rawset(self, key, value)
+end
 
 local ConfigClass = {}
 ConfigClass.__index = ConfigClass
@@ -1077,7 +1095,7 @@ end
 -- ---------- Nama game -> nama file ----------
 -- File config: <Folder>/<Nama Game> Config.lua   (Folder default "NexCat")
 local ConfigFileSuffix = " Config.lua"
-local GameNameOverride, GameNameCache
+local GameNameCache
 
 -- buang tag event [UPDATE], emoji / karakter non-ASCII, dan karakter terlarang di nama file,
 -- supaya nama file tetap sama walau judul game berganti tag event.
@@ -1092,9 +1110,6 @@ local function CleanFileName(name)
 end
 
 local function GetGameName()
-	if GameNameOverride then
-		return GameNameOverride
-	end
 	if GameNameCache then
 		return GameNameCache
 	end
@@ -1115,11 +1130,7 @@ local function GetGameName()
 	return name
 end
 
--- ganti nama game yang dipakai untuk nama file (nil = otomatis dari Roblox)
-function NexCat:SetGameName(name)
-	local clean = CleanFileName(name)
-	GameNameOverride = clean ~= "" and clean or nil
-end
+-- Nama game config sengaja tidak bisa dioverride; selalu diambil dari metadata Roblox.
 
 function NexCat:GetGameName()
 	return GetGameName()
@@ -1153,6 +1164,33 @@ function ConfigClass:_Collect()
 			data[flag] = Encode(element:Get())
 		end
 	end
+
+	-- Metadata window disimpan bersama config, bukan sebagai Flag element.
+	-- Saat fullscreen, simpan ukuran/posisi normal agar sesi berikutnya tidak ikut fullscreen.
+	local window = self.Window
+	local frame = window and window.Frame
+	if frame and frame.Parent then
+		local size = frame.Size
+		local position = frame.Position
+		if window.Fullscreen and window._restore then
+			size = window._restore.Size or size
+			position = window._restore.Position or position
+		end
+		local viewport = window.Gui and window.Gui.AbsoluteSize or ViewportSize()
+		local width = size.X.Scale * viewport.X + size.X.Offset
+		local height = size.Y.Scale * viewport.Y + size.Y.Offset
+		data.__window = {
+			Width = math.floor(width + 0.5),
+			Height = math.floor(height + 0.5),
+			Position = {
+				XScale = position.X.Scale,
+				XOffset = position.X.Offset,
+				YScale = position.Y.Scale,
+				YOffset = position.Y.Offset,
+			},
+			UIScale = window._baseScale or 1,
+		}
+	end
 	return data
 end
 
@@ -1160,12 +1198,26 @@ end
 -- return: jumlah flag yang ketemu di UI
 function ConfigClass:_Apply(data, consume)
 	local matched = 0
-	for flag, raw in pairs(data) do
-		local element = self._extra[flag] or self.Window.Flags[flag]
-		if ApplyValue(element, raw) then
+
+	-- Key khusus tidak boleh diperlakukan sebagai Flag milik element.
+	local windowState = data.__window
+	if type(windowState) == "table" and self.Window and self.Window._ApplySavedState then
+		if self.Window:_ApplySavedState(windowState) then
 			matched = matched + 1
-			if consume then
-				data[flag] = nil
+		end
+		if consume then
+			data.__window = nil
+		end
+	end
+
+	for flag, raw in pairs(data) do
+		if flag ~= "__window" then
+			local element = self._extra[flag] or self.Window.Flags[flag]
+			if ApplyValue(element, raw) then
+				matched = matched + 1
+				if consume then
+					data[flag] = nil
+				end
 			end
 		end
 	end
@@ -1814,43 +1866,46 @@ end
 -- ---------- Toggle (Type = "Toggle" | "Checkbox") ----------
 function Container:Toggle(cfg)
 	cfg = cfg or {}
-	local checkbox = cfg.Type == "Checkbox"
-	local row, _, header, title, desc, lock = Card(self, cfg, checkbox and 22 or 42)
-	local init = cfg.Value
-	if init == nil then
-		init = cfg.Default
+	local checkbox = cfg.Type == "Checkbox" or cfg.Type == "CheckBox"
+	local controlWidth = checkbox and 20 or 36
+	local row, _, header, title, desc, lock = Card(self, cfg, controlWidth)
+
+	local initial = cfg.Value
+	if initial == nil then
+		initial = cfg.Default
 	end
-	local state = init == true
+	local state = initial == true
 
 	local track, knob, box, boxStroke, mark
 	if checkbox then
 		box = New("Frame", {
-			Name = "Box",
-			Size = UDim2.fromOffset(22, 22),
+			Name = "Checkbox",
+			Size = UDim2.fromOffset(18, 18),
 			LayoutOrder = 2,
-			BackgroundTransparency = state and 0 or 0.9,
+			BackgroundTransparency = state and 0 or 1,
 			Theme = {
 				BackgroundColor3 = function(theme)
-					return state and theme.Toggle or theme.Text
+					return state and theme.Toggle or theme.Dialog
 				end,
 			},
 			Parent = header,
 		})
-		Corner(box, 6)
-		boxStroke = Stroke(box, "Outline", 1, state and 1 or 0.8)
+		Corner(box, 5)
+		boxStroke = Stroke(box, "Outline", 1, state and 1 or 0.72)
 		mark = Text(box, "✓", {
 			Size = UDim2.fromScale(1, 1),
 			Weight = "Bold",
-			TextSize = 15,
+			TextSize = 12,
 			TextXAlignment = Enum.TextXAlignment.Center,
 			TextTransparency = state and 0 or 1,
 			Theme = { TextColor3 = "KnobOn" },
 		})
 	else
 		track = New("Frame", {
-			Name = "Track",
-			Size = UDim2.fromOffset(42, 24),
+			Name = "ToggleTrack",
+			Size = UDim2.fromOffset(34, 18),
 			LayoutOrder = 2,
+			ClipsDescendants = true,
 			Theme = {
 				BackgroundColor3 = function(theme)
 					return state and theme.Toggle or theme.Button
@@ -1858,60 +1913,81 @@ function Container:Toggle(cfg)
 			},
 			Parent = header,
 		})
-		Corner(track, 12)
+		Corner(track, 9)
 		knob = New("Frame", {
-			Name = "Knob",
-			Size = UDim2.fromOffset(18, 18),
+			Name = "ToggleKnob",
+			Size = UDim2.fromOffset(14, 14),
 			AnchorPoint = Vector2.new(0, 0.5),
-			Position = state and UDim2.new(1, -21, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
-			Theme = {
-				BackgroundColor3 = function(theme)
-					return state and theme.KnobOn or theme.White
-				end,
-			},
+			Position = state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
+			Theme = { BackgroundColor3 = "White" },
 			Parent = track,
 		})
-		Corner(knob, 9)
+		Corner(knob, 7)
 	end
 
 	local click = ClickLayer(row)
 	Hoverable(click, row)
 
 	local obj = { Type = "Toggle", Value = state }
-	local function render()
+	local function render(instant)
 		local theme = NexCat.Theme
+		local duration = instant and 0 or 0.16
 		if checkbox then
 			Tween(box, {
-				BackgroundColor3 = state and theme.Toggle or theme.Text,
-				BackgroundTransparency = state and 0 or 0.9,
-			}, 0.15)
-			Tween(boxStroke, { Transparency = state and 1 or 0.8 }, 0.15)
-			Tween(mark, { TextTransparency = state and 0 or 1 }, 0.15)
+				BackgroundColor3 = state and theme.Toggle or theme.Dialog,
+				BackgroundTransparency = state and 0 or 1,
+			}, duration)
+			Tween(boxStroke, { Transparency = state and 1 or 0.72 }, duration)
+			Tween(mark, { TextTransparency = state and 0 or 1 }, duration)
 		else
-			Tween(track, { BackgroundColor3 = state and theme.Toggle or theme.Button }, 0.18)
+			Tween(track, { BackgroundColor3 = state and theme.Toggle or theme.Button }, duration)
 			Tween(knob, {
-				Position = state and UDim2.new(1, -21, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
-				BackgroundColor3 = state and theme.KnobOn or theme.White,
-			}, 0.18)
+				Position = state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
+			}, duration, Enum.EasingStyle.Quad)
 		end
 	end
+
 	function obj:Set(value, silent)
-		state = value and true or false
+		local nextState = value == true
+		local changed = state ~= nextState
+		state = nextState
 		obj.Value = state
-		render()
-		if not silent then
+		render(false)
+		if changed and not silent then
 			Fire(cfg.Callback, state)
 		end
+		return state
 	end
+
 	function obj:Get()
 		return state
 	end
-	click.MouseButton1Click:Connect(function()
+
+	click.Activated:Connect(function()
+		if lock and lock.Visible then
+			return
+		end
 		obj:Set(not state)
 	end)
+
+	render(true)
 	return Finish(self, cfg, obj, row, title, desc, lock)
 end
 
+-- Alias kecil supaya pemanggil bisa memilih nama yang lebih eksplisit.
+function Container:Switch(cfg)
+	return self:Toggle(cfg)
+end
+
+function Container:Checkbox(cfg)
+	cfg = cfg or {}
+	local options = {}
+	for key, value in pairs(cfg) do
+		options[key] = value
+	end
+	options.Type = "Checkbox"
+	return self:Toggle(options)
+end
 -- ---------- Slider ----------
 function Container:Slider(cfg)
 	cfg = cfg or {}
@@ -3402,8 +3478,12 @@ function WindowClass:SetTheme(name)
 end
 
 function WindowClass:SetTitle(value)
+	if not self.AllowTitleEdit then
+		return false, "Window title is locked. Set AllowTitleEdit = true to enable runtime changes."
+	end
 	self.Title = tostring(value)
 	self._titleLabel.Text = self.Title
+	return true
 end
 
 function WindowClass:SetAuthor(value)
@@ -3413,17 +3493,91 @@ function WindowClass:SetAuthor(value)
 end
 
 function WindowClass:SetSize(size)
-	local viewport = ViewportSize()
-	local width = math.min(size.X.Offset, viewport.X - 40)
-	local height = math.min(size.Y.Offset, viewport.Y - 40)
+	if not self.Frame or not size then
+		return false
+	end
+
+	local viewport = self.Gui and self.Gui.AbsoluteSize or nil
+	if not viewport or viewport.X < 1 or viewport.Y < 1 then
+		viewport = ViewportSize()
+	end
+	local requestedWidth, requestedHeight
+	if typeof(size) == "Vector2" then
+		requestedWidth, requestedHeight = size.X, size.Y
+	elseif typeof(size) == "UDim2" then
+		requestedWidth = size.X.Scale * viewport.X + size.X.Offset
+		requestedHeight = size.Y.Scale * viewport.Y + size.Y.Offset
+	else
+		return false
+	end
+
+	local limits = self._sizeLimits or {}
+	local maxWidth = math.max(160, math.min(tonumber(limits.MaxWidth) or viewport.X - 24, math.max(160, viewport.X - 24)))
+	local maxHeight = math.max(180, math.min(tonumber(limits.MaxHeight) or viewport.Y - 24, math.max(180, viewport.Y - 24)))
+	local minWidth = math.min(tonumber(limits.MinWidth) or 320, maxWidth)
+	local minHeight = math.min(tonumber(limits.MinHeight) or 260, maxHeight)
+	local width = math.floor(math.clamp(requestedWidth, minWidth, maxWidth) + 0.5)
+	local height = math.floor(math.clamp(requestedHeight, minHeight, maxHeight) + 0.5)
 	self.Frame.Size = UDim2.fromOffset(width, height)
+	return true
 end
 
 function WindowClass:SetUIScale(value)
-	self._baseScale = value or 1
-	if self.Opened then
-		Tween(self._scale, { Scale = self._baseScale }, 0.2)
+	local scale = tonumber(value)
+	if not scale then
+		return false
 	end
+	self._baseScale = math.clamp(scale, 0.65, 1.5)
+	if self._scale then
+		if self.Opened then
+			Tween(self._scale, { Scale = self._baseScale }, 0.2)
+		else
+			self._scale.Scale = self._baseScale * 0.9
+		end
+	end
+	return true
+end
+
+function WindowClass:_ApplySavedState(state)
+	if type(state) ~= "table" or not self.Frame or not self.Frame.Parent then
+		return false
+	end
+
+	local width = tonumber(state.Width)
+	local height = tonumber(state.Height)
+	if width and height then
+		self:SetSize(Vector2.new(width, height))
+	end
+
+	local position = state.Position
+	if type(position) == "table" then
+		local viewport = self.Gui and self.Gui.AbsoluteSize or nil
+		if not viewport or viewport.X < 1 or viewport.Y < 1 then
+			viewport = ViewportSize()
+		end
+		local xScale = tonumber(position.XScale) or 0.5
+		local yScale = tonumber(position.YScale) or 0.5
+		local xOffset = tonumber(position.XOffset) or 0
+		local yOffset = tonumber(position.YOffset) or 0
+		local actualX = xScale * viewport.X + xOffset
+		local actualY = yScale * viewport.Y + yOffset
+		local halfWidth = self.Frame.AbsoluteSize.X / 2
+		local halfHeight = self.Frame.AbsoluteSize.Y / 2
+		actualX = math.clamp(actualX, math.min(halfWidth + 8, viewport.X / 2), math.max(viewport.X - halfWidth - 8, viewport.X / 2))
+		actualY = math.clamp(actualY, math.min(halfHeight + 8, viewport.Y / 2), math.max(viewport.Y - halfHeight - 8, viewport.Y / 2))
+		self.Frame.Position = UDim2.new(
+			xScale,
+			actualX - xScale * viewport.X,
+			yScale,
+			actualY - yScale * viewport.Y
+		)
+	end
+
+	local scale = tonumber(state.UIScale)
+	if scale then
+		self:SetUIScale(scale)
+	end
+	return true
 end
 
 function WindowClass:SetToggleKey(key)
@@ -3547,6 +3701,11 @@ end
 function WindowClass:Destroy()
 	if self.Destroyed then
 		return
+	end
+	if self.AutoSave and self._configReady then
+		pcall(function()
+			self:_AutoSaveStep()
+		end)
 	end
 	self.Destroyed = true
 	for _, connection in ipairs(self._conns) do
@@ -3948,8 +4107,9 @@ function NexCat:CreateWindow(cfg)
 	local radius = cfg.Radius or 16
 
 	local window = setmetatable({
-		Title = tostring(cfg.Title or "NexCat"),
+		_title = tostring(cfg.Title or "NexCat"),
 		Author = cfg.Author,
+		AllowTitleEdit = cfg.AllowTitleEdit == true,
 		Flags = {},
 		Tabs = {},
 		Opened = true,
@@ -3976,19 +4136,25 @@ function NexCat:CreateWindow(cfg)
 	window.AutoSave = false
 	window.AutoSaveInterval = math.max(1, tonumber(cfg.AutoSaveInterval) or 5)
 	window._configReady = false
-	if cfg.GameName then
-		NexCat:SetGameName(cfg.GameName)
-	end
-
 	local viewport = ViewportSize()
 	local size = cfg.Size or UDim2.fromOffset(580, 460)
-	local width = math.min(size.X.Offset, viewport.X - 40)
-	local height = math.min(size.Y.Offset, viewport.Y - 40)
 	local minSize = cfg.MinSize or Vector2.new(560, 350)
 	local maxSize = cfg.MaxSize or Vector2.new(850, 560)
-	local minW = math.min(minSize.X, width)
-	local minH = math.min(minSize.Y, height)
+	local maxW = math.max(160, math.min(maxSize.X, math.max(160, viewport.X - 24)))
+	local maxH = math.max(180, math.min(maxSize.Y, math.max(180, viewport.Y - 24)))
+	local minW = math.min(minSize.X, maxW)
+	local minH = math.min(minSize.Y, maxH)
+	local requestedWidth = size.X.Scale * viewport.X + size.X.Offset
+	local requestedHeight = size.Y.Scale * viewport.Y + size.Y.Offset
+	local width = math.floor(math.clamp(requestedWidth, minW, maxW) + 0.5)
+	local height = math.floor(math.clamp(requestedHeight, minH, maxH) + 0.5)
 	local sideWidth = math.min(cfg.SideBarWidth or 200, math.floor(width * 0.34))
+	window._sizeLimits = {
+		MinWidth = minW,
+		MinHeight = minH,
+		MaxWidth = maxSize.X,
+		MaxHeight = maxSize.Y,
+	}
 
 	local gui = NewGui("NexCat", 100)
 	window.Gui = gui
