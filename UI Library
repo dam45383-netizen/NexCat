@@ -1,13 +1,5 @@
 
--- v1.4.0.0 (edit): REBRAND SPHINX (semua brand lama dihapus) + banner/pill/logo key system baru + tampilan tab & komponen gaya baru (sidebar grup huruf kapital + chevron, tab aktif bergaris putih, kartu profil, kartu bergaris tipis, toggle/slider/dropdown berkotak). Header window & pill tetap seperti sebelumnya.
--- v1.3.5.0 (edit): SPHINX:KeySystem didesain ulang (window kecil 560x308: kiri form key + quick tips + support, kanan gambar anime, kartu Games/Game/Executor, tombol Exit; tanpa provider). Logo N + SPHINX dan gambar anime = base64 di PALING BAWAH file (SPHINX.KeyAssets).
--- v1.3.4.0 (edit): SPHINX:KeySystem({...}) = window key system gaya SPHINX (lihat komentar di atasnya). Sebelumnya v1.3.3.0:
--- v1.3.3.0 (edit): lebar window minimum 600 supaya 2 kolom tidak kesempitan, ikon jadi 144, tema berpindah mulus, bubble nilai di slider.
--- v1.3.2.0 (edit): ikon vektor buatan sendiri tanpa asset id (144 ikon dari Frame), badge ikon di sidebar, pil melar antar tab, toast dengan tombol aksi + tumpukan menutup mulus.
--- v1.3.1.2: palet kartu/isi window digelapkan, pill lebih gelap + semburat aksen, kartu dashboard bergradien tipis.
--- v1.3.1.1: pill launcher diganti desain baru (kapsul abu gelap + sheen putih tipis di atas, badge logo N, equalizer, FPS).
--- v1.3.1.0: halaman Settings baru (6 sub-tab: General, Appearance, Performance, Notifications, Account, About) + FPS Overlay (pill stats, bingkai base64) + opsi toast.
-local SPHINX = {Version = "1.4.0.0"}
+local SPHINX = {Version = "1.0.0"}
 local Players, TweenService, UIS, RunService = game:GetService("Players"), game:GetService("TweenService"), game:GetService("UserInputService"), game:GetService("RunService")
 local Http, TextService, GuiService, Lighting = game:GetService("HttpService"), game:GetService("TextService"), game:GetService("GuiService"), game:GetService("Lighting")
 
@@ -625,6 +617,12 @@ local function track(handle, onBegin, onMove, onEnd)
 end
 
 -- kotak input: fill field gelap tanpa outline, outline aksen muncul saat fokus
+-- SHIMMER pill (seperti CSS: gradient transparan -> putih 12% -> transparan, bergeser kiri ke kanan terus-menerus)
+local SHIMMER_ALPHA, SHIMMER_TIME = 0.12, 1.4 -- tebal kilau (0..1), detik per sapuan
+local function shimmerGrad(o) -- UIGradient kilau di atas objek o; Offset digerakkan oleh Heartbeat (-1 = di luar kiri, 1 = di luar kanan)
+    return new("UIGradient", {Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 1 - SHIMMER_ALPHA), NumberSequenceKeypoint.new(1, 1)}), Offset = Vector2.new(-1, 0)}, o)
+end
 local function inputBox(parent, p)
     local wrap = new("Frame", {BackgroundColor3 = T.field, BorderSizePixel = 0, ClipsDescendants = true}, parent)
     corner(wrap, 8)
@@ -645,51 +643,67 @@ local function makeDrawer(host, rad)
     local ov = new("TextButton", {Name = "Drawer", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1, Text = "",
         AutoButtonColor = false, Visible = false, ClipsDescendants = true, ZIndex = 500, BorderSizePixel = 0}, host)
     corner(ov, rad)
-    local dr = new("Frame", {AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 200, 0.5, 0), Size = UDim2.new(0, 180, 1, -20), BackgroundTransparency = 1, Active = true}, ov)
+    local DW = 200 -- lebar panel
+    local dr = new("Frame", {AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, DW + 20, 0.5, 0), Size = UDim2.new(0, DW, 1, -20), BackgroundTransparency = 1, Active = true}, ov)
     shadow(dr)
     local body = new("Frame", {Name = "Body", Size = UDim2.fromScale(1, 1), BackgroundColor3 = T.el, BorderSizePixel = 0, Active = true}, dr)
-    corner(body, 12)
-    stroke(body, T.outline, 1, 0.2)
-    local dtitle = text(body, {Text = "", Position = UDim2.fromOffset(12, 9), Size = UDim2.new(1, -24, 0, 18), W = 3, TextSize = 12})
-    local _, box = inputBox(body, {placeholder = "Search...", wrap = {Position = UDim2.fromOffset(8, 32), Size = UDim2.new(1, -16, 0, 28), BackgroundColor3 = T.field}})
-    local list = new("ScrollingFrame", {Position = UDim2.fromOffset(6, 68), Size = UDim2.new(1, -12, 1, -74), BackgroundTransparency = 1, BorderSizePixel = 0,
-        ScrollBarThickness = 2, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y}, body)
+    corner(body, 10)
+    stroke(body, T.outline, 1, 0) -- garis 1px sama seperti kartu
+    local dtitle = text(body, {Text = "", Position = UDim2.fromOffset(14, 13), Size = UDim2.new(1, -78, 0, 16), W = 3, TextSize = 11})
+    local dcount = text(body, {Text = "", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 13), Size = UDim2.fromOffset(60, 16), TextXAlignment = XR, W = 2, TextSize = 10, TextColor3 = T.faint})
+    local sbox, box = inputBox(body, {placeholder = "Search...", wrap = {Position = UDim2.fromOffset(10, 38), Size = UDim2.new(1, -20, 0, 30), BackgroundColor3 = T.field}})
+    box.Position, box.Size = UDim2.fromOffset(32, 0), UDim2.new(1, -42, 1, 0)
+    mkIcon(sbox, "search", 12, T.dim, {AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 11, 0.5, 0)})
+    local list = new("ScrollingFrame", {Position = UDim2.fromOffset(6, 76), Size = UDim2.new(1, -12, 1, -84), BackgroundTransparency = 1, BorderSizePixel = 0,
+        ScrollBarThickness = 2, ScrollBarImageTransparency = 0.35, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y}, body)
     skin(list, "ScrollBarImageColor3", "accent")
-    new("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}, list)
+    new("UIListLayout", {Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder}, list)
+    new("UIPadding", {PaddingRight = UDim.new(0, 4)}, list) -- ruang untuk scrollbar
+    local empty = text(list, {Text = "No results", Size = UDim2.new(1, 0, 0, 30), TextXAlignment = XC, W = 2, TextSize = 11, TextColor3 = T.faint, Visible = false, LayoutOrder = 999999})
 
-    local function repaint() for _, r in ipairs(rows) do r.paint() end end
+    local function repaint()
+        local n = 0
+        for _, r in ipairs(rows) do
+            r.paint()
+            if spec and spec.isSel(r.name) then n = n + 1 end
+        end
+        if spec then dcount.Text = spec.multi and (n .. "/" .. #rows) or (#rows .. " options") end
+    end
     function D.close()
         if not ov.Visible then return end
         spec = nil
         tok = tok + 1
         local my = tok
         play(ov, {BackgroundTransparency = 1}, 0.25)
-        play(dr, {Position = UDim2.new(1, 200, 0.5, 0)}, 0.25, QUINT, Enum.EasingDirection.In)
+        play(dr, {Position = UDim2.new(1, DW + 20, 0.5, 0)}, 0.25, QUINT, Enum.EasingDirection.In)
         task.delay(NOANIM and 0 or 0.27, function() if tok == my then ov.Visible = false end end)
     end
     function D.open(sp)
         spec = sp
         tok = tok + 1
         box.Text = ""
-        dtitle.Text = tostring(sp.title or "")
+        dtitle.Text = string.upper(tostring(sp.title or ""))
         list.CanvasPosition = Vector2.new(0, 0)
         for _, r in ipairs(rows) do r.btn:Destroy() end
         rows = {}
         for i, n in ipairs(sp.options) do
             local name = tostring(n)
-            local b = new("TextButton", {Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = T.field, BackgroundTransparency = 1, Text = "", AutoButtonColor = false, BorderSizePixel = 0, LayoutOrder = i}, list)
-            corner(b, 7)
-            local tx, cbox, mark, tick, markIc = 8, nil, nil, nil, nil
+            local b = new("TextButton", {Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = T.navOn, BackgroundTransparency = 1, Text = "", AutoButtonColor = false, BorderSizePixel = 0, LayoutOrder = i}, list)
+            corner(b, 8)
+            local tx, cbox, cst, mark, tick, markIc, bar = 12, nil, nil, nil, nil, nil, nil
             if sp.multi then
-                cbox = new("Frame", {Position = UDim2.new(0, 8, 0.5, -7), Size = UDim2.fromOffset(14, 14), BackgroundColor3 = T.off, BorderSizePixel = 0}, b)
-                corner(cbox, 4)
-                stroke(cbox, T.outline, 1, 0.1)
+                -- checkbox bergaya toggle: kotak bulat, garis tipis, isi aksen saat dipilih
+                cbox = new("Frame", {AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 10, 0.5, 0), Size = UDim2.fromOffset(16, 16), BackgroundColor3 = T.off, BorderSizePixel = 0}, b)
+                corner(cbox, 5)
+                cst = stroke(cbox, T.swLn, 1, 0)
                 markIc = mkIcon(cbox, "check", 11, WHITE, {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Visible = false})
                 mark = markIc.inst
-                tx = 30
-            end
-            if not sp.multi then
-                tick = mkIcon(b, "check", 13, T.accent, {AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Visible = false})
+                tx = 34
+            else
+                -- pilihan aktif: kotak gelap + garis putih di kiri (sama seperti tab aktif di sidebar) + centang di kanan
+                bar = new("Frame", {AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 3, 0.5, 0), Size = UDim2.fromOffset(3, 0), BackgroundColor3 = WHITE, BorderSizePixel = 0}, b)
+                corner(bar, "full")
+                tick = mkIcon(b, "check", 13, T.accent, {AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0), Visible = false})
             end
             local sc = sp.swatch and sp.swatch(name)
             if sc then
@@ -697,28 +711,28 @@ local function makeDrawer(host, rad)
                 corner(dot, "full")
                 tx = tx + 20
             end
-            local lb = text(b, {Text = name, Position = UDim2.fromOffset(tx, 0), Size = UDim2.new(1, -(tx + (tick and 26 or 6)), 1, 0), W = 2, TextSize = 11, TextColor3 = T.mid})
+            local lb = text(b, {Text = name, Position = UDim2.fromOffset(tx, 0), Size = UDim2.new(1, -(tx + (tick and 30 or 8)), 1, 0), W = 2, TextSize = 11, TextColor3 = T.dim})
             local r = {btn = b, name = name}
             function r.paint()
                 local on = sp.isSel(name)
-                b.BackgroundColor3 = on and T.accent or T.field
-                b.BackgroundTransparency = on and 0.84 or 1
+                play(b, {BackgroundColor3 = T.navOn, BackgroundTransparency = on and 0 or 1}, 0.12)
+                lb.TextColor3 = on and T.text or T.dim
+                lb.FontFace = on and FONT[3] or FONT[2]
                 if sp.multi then
-                    cbox.BackgroundColor3 = on and T.accent or T.off
+                    play(cbox, {BackgroundColor3 = on and T.accent or T.off}, 0.12)
+                    cst.Color = on and T.accent or T.swLn
                     mark.Visible = on and true or false
                     markIc.tint(onAcc(), 0)
-                    lb.TextColor3 = on and T.text or T.dim
-                    lb.FontFace = on and FONT[3] or FONT[2]
                 else
-                    lb.TextColor3 = on and T.text or T.dim
                     tick.tint(T.accent, 0)
                     tick.inst.Visible = on and true or false
+                    play(bar, {Size = UDim2.fromOffset(3, on and 14 or 0)}, 0.15)
                 end
             end
             b.MouseEnter:Connect(function()
                 if not sp.isSel(name) then
                     lb.TextColor3 = T.text
-                    b.BackgroundColor3, b.BackgroundTransparency = T.hover, 0
+                    play(b, {BackgroundColor3 = T.hover, BackgroundTransparency = 0.45}, 0.12)
                 end
             end)
             b.MouseLeave:Connect(r.paint)
@@ -727,17 +741,23 @@ local function makeDrawer(host, rad)
                 repaint()
                 if not sp.multi then D.close() end
             end)
-            r.paint()
             rows[i] = r
         end
+        repaint()
         ov.Visible = true
         play(ov, {BackgroundTransparency = 0.5}, 0.25)
-        dr.Position = UDim2.new(1, 200, 0.5, 0)
-        play(dr, {Position = UDim2.new(1, -16, 0.5, 0)}, 0.25)
+        dr.Position = UDim2.new(1, DW + 20, 0.5, 0)
+        play(dr, {Position = UDim2.new(1, -14, 0.5, 0)}, 0.28)
     end
     box:GetPropertyChangedSignal("Text"):Connect(function()
         local q = box.Text:lower()
-        for _, r in ipairs(rows) do r.btn.Visible = (q == "") or (r.name:lower():find(q, 1, true) ~= nil) end
+        local shown = 0
+        for _, r in ipairs(rows) do
+            local v = (q == "") or (r.name:lower():find(q, 1, true) ~= nil)
+            r.btn.Visible = v
+            if v then shown = shown + 1 end
+        end
+        empty.Visible = (shown == 0) and (#rows > 0) -- "No results" saat pencarian kosong
     end)
     ov.MouseButton1Click:Connect(D.close)
     return D
@@ -1334,15 +1354,47 @@ function SPHINX:CreateWindow(C)
         if blurFx then pcall(function() blurFx:Destroy() end) end
     end)
 
-    -- CONFIG: nilai komponen ber-Flag disimpan otomatis per game
+    -- CONFIG: nilai komponen ber-Flag disimpan otomatis per game. Nama file = NAMA GAME: SPHINX_HUB/configs/<Nama Game>.lua (isi tetap JSON)
     local placeId, gameId = game.PlaceId, game.GameId
-    local curName = tostring(placeId)
+    local function cleanName(s) -- aman untuk nama file: buang emoji + karakter terlarang, rapikan spasi, maksimal 40 karakter
+        s = tostring(s or "")
+        s = s:gsub("[\240-\247][\128-\191]*", "")
+        s = s:gsub('[%c\\/:*?"<>|]', "")
+        s = s:gsub("%s+", " ")
+        s = s:gsub("^[%s%.]+", "")
+        local okc, cut = pcall(utf8.offset, s, 41)
+        if okc and cut then s = s:sub(1, cut - 1) end
+        return (s:gsub("[%s%.]+$", ""))
+    end
+    local function resolveGameName()
+        local name, done = nil, false
+        task.spawn(function()
+            local ok, inf = pcall(function() return game:GetService("MarketplaceService"):GetProductInfo(placeId) end)
+            if ok and type(inf) == "table" and type(inf.Name) == "string" then name = inf.Name end
+            done = true
+        end)
+        local t0 = os.clock()
+        while not done and os.clock() - t0 < 3 do task.wait() end
+        if not name or cleanName(name) == "" then
+            local gn = game.Name
+            if type(gn) == "string" and gn ~= "" and gn ~= "Game" and gn ~= "Place1" then name = gn end
+        end
+        return cleanName(name)
+    end
+    local curName = resolveGameName()
+    if curName == "" then curName = tostring(placeId) end -- nama game tidak bisa diambil -> pakai Place ID
     local Data, Reg = {Features = {}}, {}
-    local function cpath(n) return CFGS .. "/" .. tostring(n) .. ".json" end
+    local function cpath(n, ext)
+        local c = cleanName(n)
+        if c == "" then c = "default" end
+        return CFGS .. "/" .. c .. (ext or ".lua")
+    end
     local function readCfg(n)
         if not (isfile and readfile) then return nil end
-        local ok, d = pcall(function() if isfile(cpath(n)) then return Http:JSONDecode(readfile(cpath(n))) end end)
-        if ok and type(d) == "table" and type(d.Features) == "table" then return d end
+        for _, ext in ipairs({".lua", ".json"}) do -- .json = config lama (sebelum pakai nama game)
+            local ok, d = pcall(function() if isfile(cpath(n, ext)) then return Http:JSONDecode(readfile(cpath(n, ext))) end end)
+            if ok and type(d) == "table" and type(d.Features) == "table" then return d end
+        end
         return nil
     end
     local function saveCfg(n) pcall(function() writefile(cpath(n or curName), Http:JSONEncode(Data)) end) end
@@ -1765,6 +1817,14 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             corner(sheen, "full")
             new("UIGradient", {Rotation = 90, Transparency = NumberSequence.new({
                 NumberSequenceKeypoint.new(0, 0.86), NumberSequenceKeypoint.new(0.22, 0.95), NumberSequenceKeypoint.new(0.45, 1), NumberSequenceKeypoint.new(1, 1)})}, sheen)
+            -- shimmer: kilau putih menyapu kapsul
+            local shim = new("Frame", {Name = "Shimmer", Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, BorderSizePixel = 0, ZIndex = 95}, launcher)
+            corner(shim, "full")
+            local shimG = shimmerGrad(shim)
+            bind(RunService.Heartbeat, function()
+                if NOANIM or not launcher.Visible then shimG.Offset = Vector2.new(-1, 0) return end
+                shimG.Offset = Vector2.new(((os.clock() % SHIMMER_TIME) / SHIMMER_TIME) * 2 - 1, 0)
+            end)
 
             -- isi pill digambar di wadah berukuran dasar lalu diskalakan (UIScale di wadah, BUKAN di launcher, supaya Position & drag launcher tidak ikut terskala)
             local pbody = new("Frame", {Name = "Body", Size = UDim2.fromOffset(PW, PH), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 91}, launcher)
@@ -1847,6 +1907,12 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             end
             local lBody, lTint = lay("PillBody", pB, 90), lay("PillTint", pT, 91)
             lay("PillShine", pS, 92)
+            local shimG = shimmerGrad(new("ImageLabel", {Name = "PillShimmer", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(PILL_IMG_FX, PILL_IMG_FY),
+                BackgroundTransparency = 1, BorderSizePixel = 0, Image = pB, ImageColor3 = WHITE, ScaleType = Enum.ScaleType.Stretch, ZIndex = 94}, launcher))
+            bind(RunService.Heartbeat, function()
+                if NOANIM or not launcher.Visible then shimG.Offset = Vector2.new(-1, 0) return end
+                shimG.Offset = Vector2.new(((os.clock() % SHIMMER_TIME) / SHIMMER_TIME) * 2 - 1, 0)
+            end)
 
             -- bar "II": 2 bar putih (turun jadi 1 bar kalau FPS rendah). {x, y, lebar, tinggi} dalam fraksi pill
             local sig = {}
@@ -4934,10 +5000,10 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         g1:Dropdown({Title = "Startup behavior", Desc = "What the menu does when the script loads", Flag = "StartMode",
             Options = {"Open menu", "Stay minimized"}, Default = "Open menu"})
         g1:Info({Title = "Place ID", Value = tostring(placeId), Copy = true})
-        g1:Info({Title = "Active config", Value = curName .. ".json"})
+        g1:Info({Title = "Active config", Value = curName .. ".lua"})
 
         local g2 = gen:Accordion({Title = "Configs", Icon = "save", Column = 2})
-        local cname = g2:Textbox({Title = "Config name", Desc = "Saved in " .. CFGS, Flag = "UICfgName", Default = "default"})
+        local cname = g2:Textbox({Title = "Config name", Desc = "Saved in " .. CFGS, Flag = "UICfgName", Default = curName})
         g2:Buttons({
             {Title = "Save", Callback = function()
                 local n = tostring(cname:Get() or "")
