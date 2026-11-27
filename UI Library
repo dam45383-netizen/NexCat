@@ -1,5 +1,16 @@
-
-local SPHINX = {Version = "1.0.0"}
+-- SPHINX UI 1.0.1
+--  [ + ] 12 fitur baru di Settings: Anti-AFK, Auto rejoin, Server hop, Streamer mode, Copy config (General); Animation speed + style (Appearance);
+--        Graphics quality, Unfocused FPS limit, Mute game, Fullbright, Field of view (Performance).
+--  [ + ] FPS Boost (Settings > Performance): dunia jadi abu-abu polos tanpa tekstur/efek, level Light / Medium / Ultra, karakter tetap berwarna.
+--  [ = ] Animasi diperhalus: buka/tutup UI (tirai pudar + pill ikut menekan), ganti halaman, toggle, tombol, slider, dropdown, accordion + kecepatan & gaya bisa diatur.
+-- v1.3.5.0 (edit): SPHINX:KeySystem didesain ulang (window kecil 560x308: kiri form key + quick tips + support, kanan gambar anime, kartu Games/Game/Executor, tombol Exit; tanpa provider). Logo N + SPHINX dan gambar anime = base64 di PALING BAWAH file (SPHINX.KeyAssets).
+-- v1.3.4.0 (edit): SPHINX:KeySystem({...}) = window key system gaya SPHINX (lihat komentar di atasnya). Sebelumnya v1.3.3.0:
+-- v1.3.3.0 (edit): lebar window minimum 600 supaya 2 kolom tidak kesempitan, ikon jadi 144, tema berpindah mulus, bubble nilai di slider.
+-- v1.3.2.0 (edit): ikon vektor buatan sendiri tanpa asset id (144 ikon dari Frame), badge ikon di sidebar, pil melar antar tab, toast dengan tombol aksi + tumpukan menutup mulus.
+-- v1.3.1.2: palet kartu/isi window digelapkan, pill lebih gelap + semburat aksen, kartu dashboard bergradien tipis.
+-- v1.3.1.1: pill launcher diganti desain baru (kapsul abu gelap + sheen putih tipis di atas, badge logo N, equalizer, FPS).
+-- v1.3.1.0: halaman Settings baru (6 sub-tab: General, Appearance, Performance, Notifications, Account, About) + FPS Overlay (pill stats, bingkai base64) + opsi toast.
+local SPHINX = {Version = "1.0.1"}
 local Players, TweenService, UIS, RunService = game:GetService("Players"), game:GetService("TweenService"), game:GetService("UserInputService"), game:GetService("RunService")
 local Http, TextService, GuiService, Lighting = game:GetService("HttpService"), game:GetService("TextService"), game:GetService("GuiService"), game:GetService("Lighting")
 
@@ -223,9 +234,13 @@ local function text(parent, p)
     end
     return new("TextLabel", d, parent)
 end
+local ANIM_SPEED, DEFAULT_STYLE = 1, QUINT -- kecepatan (1 = normal) & gaya easing bawaan; diatur di Settings > Appearance > Motion
+local ANIM_STYLES = {Smooth = Enum.EasingStyle.Quint, Snappy = Enum.EasingStyle.Exponential, Soft = Enum.EasingStyle.Sine}
+local function aT(t) return t / ANIM_SPEED end -- durasi setelah dipengaruhi kecepatan (untuk task.delay / task.wait yang mengikuti tween)
 local function play(o, p, t, style, dir)
     if NOANIM then for k, v in pairs(p) do o[k] = v end return end
-    TweenService:Create(o, TweenInfo.new(t or 0.2, style or QUINT, dir or Enum.EasingDirection.Out), p):Play()
+    if style == nil or style == QUINT then style = DEFAULT_STYLE end -- QUINT = "gaya bawaan"
+    TweenService:Create(o, TweenInfo.new((t or 0.2) / ANIM_SPEED, style, dir or Enum.EasingDirection.Out), p):Play()
 end
 local function safe(fn, ...)
     if type(fn) ~= "function" then return end
@@ -676,7 +691,7 @@ local function makeDrawer(host, rad)
         local my = tok
         play(ov, {BackgroundTransparency = 1}, 0.25)
         play(dr, {Position = UDim2.new(1, DW + 20, 0.5, 0)}, 0.25, QUINT, Enum.EasingDirection.In)
-        task.delay(NOANIM and 0 or 0.27, function() if tok == my then ov.Visible = false end end)
+        task.delay(NOANIM and 0 or aT(0.27), function() if tok == my then ov.Visible = false end end)
     end
     function D.open(sp)
         spec = sp
@@ -742,12 +757,16 @@ local function makeDrawer(host, rad)
                 if not sp.multi then D.close() end
             end)
             rows[i] = r
+            if not NOANIM and i <= 12 then -- 12 pilihan pertama muncul berurutan
+                lb.TextTransparency = 1
+                task.delay(aT(0.05 + i * 0.022), function() if rows[i] == r then play(lb, {TextTransparency = 0}, 0.24) end end)
+            end
         end
         repaint()
         ov.Visible = true
         play(ov, {BackgroundTransparency = 0.5}, 0.25)
         dr.Position = UDim2.new(1, DW + 20, 0.5, 0)
-        play(dr, {Position = UDim2.new(1, -14, 0.5, 0)}, 0.28)
+        play(dr, {Position = UDim2.new(1, -14, 0.5, 0)}, 0.36)
     end
     box:GetPropertyChangedSignal("Text"):Connect(function()
         local q = box.Text:lower()
@@ -1407,6 +1426,8 @@ function SPHINX:CreateWindow(C)
     end
 
     NOANIM = (C.NoAnim == true) or (F.UINoAnim == true)
+    ANIM_SPEED = math.clamp((tonumber(F.AnimSpeed) or 100) / 100, 0.5, 2)
+    DEFAULT_STYLE = ANIM_STYLES[F.AnimStyle] or QUINT
     if F.SphinxSkin ~= true then F.SphinxSkin, F.UITheme = true, "Sphinx" persist() end -- sekali saja: pindah ke tema Sphinx
     local curTheme = (type(F.UITheme) == "string" and THEMES[F.UITheme]) and F.UITheme or ORDER[1]
     applyTheme(curTheme, true)
@@ -1461,7 +1482,7 @@ function SPHINX:CreateWindow(C)
         local r = new("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(0, 0), BackgroundColor3 = WHITE, BackgroundTransparency = 0.88, BorderSizePixel = 0}, f)
         corner(r, "full")
         play(r, {Size = UDim2.fromOffset(size, size), BackgroundTransparency = 1}, 0.45, Enum.EasingStyle.Quad)
-        task.delay(0.5, function() r:Destroy() end)
+        task.delay(aT(0.5), function() r:Destroy() end)
     end
 
     ------------------------------------------------------------------
@@ -1487,7 +1508,7 @@ function SPHINX:CreateWindow(C)
         elseif blurFx and blurFx.Parent then
             local b = blurFx
             play(b, {Size = 0}, 0.25)
-            task.delay(NOANIM and 0 or 0.28, function()
+            task.delay(NOANIM and 0 or aT(0.28), function()
                 if not (blurOn and isOpen) and b.Parent then b.Enabled = false end
             end)
         end
@@ -1547,8 +1568,8 @@ function SPHINX:CreateWindow(C)
             for i, e in ipairs(toasts) do if e == entry then table.remove(toasts, i) break end end
             play(m, {Position = UDim2.fromOffset(310 * Toast.side, GAP)}, 0.45, QUINT, Enum.EasingDirection.In)
             if NOANIM then wrap:Destroy() return end
-            task.delay(0.3, function() play(wrap, {Size = UDim2.new(1, 0, 0, 0)}, 0.28) end) -- tinggi menutup, toast lain bergeser mulus
-            task.delay(0.62, function() wrap:Destroy() end)
+            task.delay(aT(0.3), function() play(wrap, {Size = UDim2.new(1, 0, 0, 0)}, 0.28) end) -- tinggi menutup, toast lain bergeser mulus
+            task.delay(aT(0.62), function() wrap:Destroy() end)
         end
         entry.leave = leave
         toasts[#toasts + 1] = entry
@@ -1729,6 +1750,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         local avatar = new("ImageLabel", {Name = "Avatar", AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 7, 0.5, 0), Size = UDim2.fromOffset(28, 28), BackgroundColor3 = T.chip, BorderSizePixel = 0,
             ScaleType = Enum.ScaleType.Crop}, setBtn)
         corner(avatar, "full")
+        Window._prof = {avatar = avatar}
         task.spawn(function()
             local ok, img = pcall(function() return Players:GetUserThumbnailAsync(pl.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100) end)
             if ok and type(img) == "string" and img ~= "" then avatar.Image = img end
@@ -1736,7 +1758,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
     end
     local setIc = mkIcon(setBtn, "settings", 11, T.dim, {AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -9, 0.5, 0)})
     local setLb = text(setBtn, {Text = tostring((pl.DisplayName ~= "" and pl.DisplayName) or pl.Name), Position = UDim2.fromOffset(42, 5), Size = UDim2.new(1, -64, 0, 15), W = 3, TextSize = 10, TextColor3 = T.text, TextTruncate = Enum.TextTruncate.AtEnd})
-    text(setBtn, {Text = "@" .. pl.Name, Position = UDim2.fromOffset(42, 20), Size = UDim2.new(1, -64, 0, 14), W = 1, TextSize = 9, TextColor3 = T.dim, TextTruncate = Enum.TextTruncate.AtEnd})
+    Window._prof.name, Window._prof.user = setLb, text(setBtn, {Text = "@" .. pl.Name, Position = UDim2.fromOffset(42, 20), Size = UDim2.new(1, -64, 0, 14), W = 1, TextSize = 9, TextColor3 = T.dim, TextTruncate = Enum.TextTruncate.AtEnd})
 
     ------------------------------------------------------------------
     -- MAIN: judul halaman + subjudul, tombol bintang / lonceng / pencarian, chip sub-tab, konten
@@ -2031,18 +2053,38 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         if launchPos then return Vector2.new(launchPos.X, launchPos.Y + hh) end
         return Vector2.new(virt.X / 2, 8 + hh)
     end
+    -- tirai warna latar di atas seluruh window: memudar saat buka / menyala saat tutup, supaya isi window muncul & hilang mulus (bukan "pop")
+    local winVeil = new("Frame", {Name = "Veil", Size = UDim2.fromScale(1, 1), BackgroundColor3 = T.bg, BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 400, Visible = false}, win)
+    corner(winVeil, 12)
+    local vTok = 0
+    local pillSq = new("UIScale", {Scale = 1}, launcher) -- pill ikut "ditekan" saat window buka/tutup + sedikit terangkat saat disorot
+    if not (UIS.TouchEnabled and not UIS.MouseEnabled) then
+        launcher.MouseEnter:Connect(function() play(pillSq, {Scale = 1.04}, 0.22) end)
+        launcher.MouseLeave:Connect(function() play(pillSq, {Scale = 1}, 0.3) end)
+    end
+    local function pillBump()
+        if NOANIM then return end
+        pillSq.Scale = 0.9
+        play(pillSq, {Scale = 1}, 0.45, BACK)
+    end
     local function openA()
         if isOpen then return end
         isOpen = true
         layoutWin()
         shell.Visible = true
-        if NOANIM then return blurUpdate() end
+        vTok = vTok + 1
+        local my = vTok
+        if NOANIM then winVeil.Visible = false return blurUpdate() end
         local pc, sz = pillCenter(), shell.Size
         shell.Position = UDim2.fromOffset(pc.X - sz.X.Offset / 2, pc.Y - sz.Y.Offset / 2)
-        winScale.Scale, wsh.ImageTransparency = 0.06, 1
-        play(shell, {Position = UDim2.fromOffset(curPos.X, curPos.Y)}, 0.45, QUINT)
-        play(winScale, {Scale = 1}, 0.45, QUINT)
-        play(wsh, {ImageTransparency = 0.5}, 0.4)
+        winScale.Scale, wsh.ImageTransparency = 0.12, 1
+        winVeil.BackgroundColor3 = T.bg
+        winVeil.BackgroundTransparency, winVeil.Visible = 0, true
+        play(shell, {Position = UDim2.fromOffset(curPos.X, curPos.Y)}, 0.5, QUINT)
+        play(winScale, {Scale = 1}, 0.55, QUINT)
+        play(wsh, {ImageTransparency = 0.5}, 0.5)
+        task.delay(aT(0.05), function() if vTok == my then play(winVeil, {BackgroundTransparency = 1}, 0.45, Enum.EasingStyle.Sine) end end)
+        task.delay(aT(0.55), function() if vTok == my then winVeil.Visible = false end end)
         blurUpdate()
     end
     local function closeA()
@@ -2050,14 +2092,19 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         isOpen = false
         if ctxWin.d then ctxWin.d.close() end
         blurUpdate()
-        if NOANIM then shell.Visible = false return end
+        vTok = vTok + 1
+        local my = vTok
+        if NOANIM then shell.Visible = false winVeil.Visible = false return end
         local pc, sz = pillCenter(), shell.Size
-        play(shell, {Position = UDim2.fromOffset(pc.X - sz.X.Offset / 2, pc.Y - sz.Y.Offset / 2)}, 0.34, QUINT, Enum.EasingDirection.In)
-        play(winScale, {Scale = 0.06}, 0.34, QUINT, Enum.EasingDirection.In)
-        play(wsh, {ImageTransparency = 1}, 0.25)
-        task.delay(0.36, function() if not isOpen then shell.Visible = false end end)
+        winVeil.BackgroundColor3 = T.bg
+        winVeil.Visible = true
+        play(winVeil, {BackgroundTransparency = 0}, 0.22, Enum.EasingStyle.Sine)
+        play(shell, {Position = UDim2.fromOffset(pc.X - sz.X.Offset / 2, pc.Y - sz.Y.Offset / 2)}, 0.38, QUINT, Enum.EasingDirection.In)
+        play(winScale, {Scale = 0.12}, 0.38, QUINT, Enum.EasingDirection.In)
+        play(wsh, {ImageTransparency = 1}, 0.3)
+        task.delay(aT(0.4), function() if not isOpen and vTok == my then shell.Visible = false winVeil.Visible = false end end)
     end
-    local function toggleWin() if isOpen then closeA() else openA() end end
+    local function toggleWin() pillBump() if isOpen then closeA() else openA() end end
 
     track(launcher,
         function() return launchPos end,
@@ -2339,13 +2386,21 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         return p
     end
 
+    local pageVeil = new("Frame", {Name = "PageVeil", Position = UDim2.fromOffset(0, TOP0), Size = UDim2.new(1, 0, 1, -TOP0), BackgroundColor3 = T.bg, BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 30, Visible = false}, main)
+    local pvTok = 0
     local function showPage(p)
         p.frame.Visible = true
         p.chips.Visible = #p.subs > 0
         if #p.subs == 0 then p.dScroll.Visible = true end
         if not NOANIM then
-            p.frame.Position = UDim2.fromOffset(12, p.top)
-            play(p.frame, {Position = UDim2.fromOffset(0, p.top)}, 0.32)
+            p.frame.Position = UDim2.fromOffset(16, p.top)
+            play(p.frame, {Position = UDim2.fromOffset(0, p.top)}, 0.4)
+            pvTok = pvTok + 1
+            local my = pvTok
+            pageVeil.BackgroundColor3 = T.bg
+            pageVeil.BackgroundTransparency, pageVeil.Visible = 0.05, true -- isi halaman "muncul" dari latar
+            play(pageVeil, {BackgroundTransparency = 1}, 0.32, Enum.EasingStyle.Sine)
+            task.delay(aT(0.34), function() if pvTok == my then pageVeil.Visible = false end end)
         end
     end
     -- PIL MELAR: pil bayangan berjalan dari tab lama ke tab baru (memanjang dulu, lalu menyusut & memantul di tujuan).
@@ -2378,15 +2433,15 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         ghost.Visible = true
         local top, bot = math.min(oy, ny), math.max(oy + oh, ny + nH)
         play(ghost, {Position = UDim2.fromOffset(math.min(ox, nx), top), Size = UDim2.fromOffset(math.max(ow, nW), bot - top)}, 0.17, Enum.EasingStyle.Quad)
-        nw.slideDelay = 0.3
+        nw.slideDelay = aT(0.3)
         task.spawn(function()
-            task.wait(0.15)
+            task.wait(aT(0.15))
             if ghostTok ~= my then return end
             play(ghost, {Position = UDim2.fromOffset(nx, ny), Size = UDim2.fromOffset(nW, nH)}, 0.26, BACK)
-            task.wait(0.22)
+            task.wait(aT(0.22))
             if ghostTok ~= my then return end
             play(ghost, {BackgroundTransparency = 1}, 0.16)
-            task.wait(0.18)
+            task.wait(aT(0.18))
             if ghostTok == my then ghost.Visible = false end
         end)
     end
@@ -2404,6 +2459,11 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         if p.hidden then paintSettingsBtn(true) else paintItem(p, true) lastPage = key end
         titleL.Text = p.title or p.name
         subL.Text = p.subtitle or ""
+        if not NOANIM then
+            titleL.TextTransparency, subL.TextTransparency = 1, 1
+            play(titleL, {TextTransparency = 0}, 0.3)
+            play(subL, {TextTransparency = 0}, 0.38)
+        end
         showPage(p)
         updateStar()
     end
@@ -2627,9 +2687,10 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             local title, desc = o.Title or o.Name or "Button", o.Desc or o.SubText
             local outlined = (style == "outline")
             local base = T.field
-            local b = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = base, BorderSizePixel = 0, ClipsDescendants = true}, f)
+            local b = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = base, BorderSizePixel = 0, ClipsDescendants = true, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5)}, f)
             corner(b, 8)
             local st = stroke(b, T.outline, 1, 0)
+            local bsc = new("UIScale", {Scale = 1}, b) -- efek tekan: tombol mengecil sedikit lalu memantul balik
             local tl, dl
             if desc then
                 tl = text(b, {Text = tostring(title), Position = UDim2.fromOffset(12, 5), Size = UDim2.new(1, -24, 0, 14), W = 3, TextSize = 11, TextColor3 = T.text})
@@ -2644,7 +2705,9 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                 play(st, {Color = hov and T.accent or T.outline, Transparency = hov and 0.55 or 0}, 0.2)
             end
             hit.MouseEnter:Connect(function() hov = true rest() end)
-            hit.MouseLeave:Connect(function() hov = false rest() end)
+            hit.MouseLeave:Connect(function() hov = false rest() play(bsc, {Scale = 1}, 0.25, BACK) end)
+            hit.MouseButton1Down:Connect(function() play(bsc, {Scale = 0.97}, 0.08) end)
+            hit.MouseButton1Up:Connect(function() play(bsc, {Scale = 1}, 0.4, BACK) end)
             hit.MouseButton1Click:Connect(function()
                 ripple(b, 160)
                 play(b, {BackgroundColor3 = T.field:Lerp(T.accent, 0.2)}, 0.08)
@@ -2701,7 +2764,8 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                 v, obj.Value = nv, nv
                 play(sw, {BackgroundColor3 = v and T.accent or T.off}, 0.25)
                 play(swSt, {Color = v and T.accent or T.swLn}, 0.25)
-                play(knob, {Position = kpos(v), BackgroundColor3 = kcol(v)}, 0.25)
+                play(knob, {Position = kpos(v)}, 0.34, BACK) -- knob meluncur dengan sedikit pantulan
+                play(knob, {BackgroundColor3 = kcol(v)}, 0.2)
                 F[flag] = v
                 if not silent then persist() safe(o.Callback, v) end
             end
@@ -2789,7 +2853,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             local function render(x)
                 local a = (mx == mn) and 0 or (x - mn) / (mx - mn)
                 curA = a
-                play(fill, {Size = UDim2.fromScale(a, 1)}, 0.05)
+                play(fill, {Size = UDim2.fromScale(a, 1)}, 0.1, Enum.EasingStyle.Quad)
                 play(knob, {Position = UDim2.fromScale(a, 0.5)}, 0.05)
                 vl.Text = tostring(x) .. (o.Suffix or "")
                 btx.Text = vl.Text
@@ -3246,7 +3310,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                     local h = v and contentH() or 0
                     play(wrap, {Size = UDim2.new(1, 0, 0, h)}, 0.3)
                     play(box, {Size = UDim2.new(1, 0, 0, HEAD + h)}, 0.3)
-                    task.wait(0.33)
+                    task.wait(aT(0.33))
                     if tok ~= my then return end
                     animating = false
                     if open then setH(contentH()) else wrap.Visible = false end
@@ -4883,7 +4947,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                 panel.Visible = false
             else
                 play(panel, {Position = hidden}, 0.18, QUINT, Enum.EasingDirection.In)
-                task.delay(0.2, function() if ptok == my then panel.Visible = false end end)
+                task.delay(aT(0.2), function() if ptok == my then panel.Visible = false end end)
             end
         end
         chevB.MouseButton1Click:Connect(function()
@@ -4947,6 +5011,19 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         sp.title = "Settings"
         local S = sp.K
         local booting = true -- callback komponen jalan sekali saat dibuat; preset (mis. Optimization mode) jangan menimpa nilai tersimpan
+        local Stream = {infos = {}} -- Streamer mode: kartu profil + baris Account disamarkan
+        function Stream.apply()
+            local LPS = Players.LocalPlayer
+            local on = F.StreamerMode == true
+            local pf = Window._prof
+            if pf then
+                pf.name.Text = on and "Hidden" or tostring((LPS.DisplayName ~= "" and LPS.DisplayName) or LPS.Name)
+                pf.user.Text = on and "@******" or ("@" .. LPS.Name)
+                pf.avatar.ImageTransparency = on and 1 or 0
+            end
+            local vals = {LPS.Name, LPS.DisplayName, tostring(LPS.UserId)}
+            for i, inf in pairs(Stream.infos) do pcall(function() inf:Set(on and "Hidden" or vals[i]) end) end
+        end
         local LPS = Players.LocalPlayer
         local scaleS
 
@@ -4964,7 +5041,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         local function resetAll()
             resetWindow()
             local defs = {
-                {"UITheme", "Sphinx"}, {"UIPill", true}, {"UIPillScale", 100}, {"UIBlur", false}, {"UIBlurSize", 18}, {"UINoAnim", false},
+                {"UITheme", "Sphinx"}, {"AnimSpeed", 100}, {"AnimStyle", "Smooth"}, {"UIPill", true}, {"UIPillScale", 100}, {"UIBlur", false}, {"UIBlurSize", 18}, {"UINoAnim", false},
                 {"StartMode", "Open menu"}, {"NotifToasts", true}, {"NotifPos", "Bottom right"}, {"NotifDurPct", 100}, {"NotifLoad", true},
                 {"FpsOverlay", false}, {"OvExpanded", true}, {"OvScale", 90}, {"OvRate", "Normal"}, {"OvLock", false},
                 {"FpsCap", "Default"}, {"Render3D", false},
@@ -5043,6 +5120,77 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         end)})
 
         ---------------- APPEARANCE ----------------
+        local g4 = gen:Accordion({Title = "Utilities", Icon = "zap", Column = 2})
+        local afkConn
+        g4:Toggle({Title = "Anti-AFK", Desc = "Stops the idle kick (20 minutes)", Flag = "AntiAfk", Default = false,
+            Callback = function(v)
+                if afkConn then afkConn:Disconnect() afkConn = nil end
+                if not v then return end
+                afkConn = LPS.Idled:Connect(function()
+                    pcall(function()
+                        local VU = game:GetService("VirtualUser")
+                        VU:CaptureController()
+                        VU:ClickButton2(Vector2.new())
+                    end)
+                end)
+            end})
+        local rejoinConn, rejoinTok = nil, 0
+        g4:Toggle({Title = "Auto rejoin", Desc = "Rejoin automatically after a disconnect or kick", Flag = "AutoRejoin", Default = false,
+            Callback = function(v)
+                rejoinTok = rejoinTok + 1
+                local my = rejoinTok
+                if rejoinConn then rejoinConn:Disconnect() rejoinConn = nil end
+                if not v then return end
+                pcall(function()
+                    local ov = game:GetService("CoreGui"):WaitForChild("RobloxPromptGui", 8):WaitForChild("promptOverlay", 8)
+                    if rejoinTok ~= my then return end
+                    rejoinConn = ov.ChildAdded:Connect(function(c)
+                        if c.Name ~= "ErrorPrompt" then return end
+                        task.wait(2)
+                        local TS = game:GetService("TeleportService")
+                        if #Players:GetPlayers() <= 1 then
+                            pcall(function() TS:Teleport(game.PlaceId, LPS) end)
+                        else
+                            pcall(function() TS:TeleportToPlaceInstance(game.PlaceId, game.JobId, LPS) end)
+                        end
+                    end)
+                end)
+            end})
+        g4:Button({Title = "Server hop", Desc = "Join a different public server of this game", Callback = function()
+            notify("Server hop", "Searching for a server...", T.accent, 2)
+            task.spawn(function()
+                local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
+                local body
+                local okg, r = pcall(function() return game:HttpGet(url) end)
+                if okg and type(r) == "string" then body = r
+                else
+                    local req = (syn and syn.request) or http_request or request
+                    if req then
+                        local ok2, rs = pcall(req, {Url = url, Method = "GET"})
+                        if ok2 and type(rs) == "table" then body = rs.Body end
+                    end
+                end
+                local ok, res = pcall(function() return Http:JSONDecode(body) end)
+                local picks = {}
+                if ok and type(res) == "table" and type(res.data) == "table" then
+                    for _, sv in ipairs(res.data) do
+                        if sv.id ~= game.JobId and sv.playing and sv.maxPlayers and sv.playing < sv.maxPlayers - 1 then picks[#picks + 1] = sv.id end
+                    end
+                end
+                if #picks > 0 then
+                    pcall(function() game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, picks[math.random(#picks)], LPS) end)
+                else
+                    notify("Server hop", "No other server found", T.bad, 3)
+                end
+            end)
+        end})
+        g4:Toggle({Title = "Streamer mode", Desc = "Hide your name, ID and avatar in this UI", Flag = "StreamerMode", Default = false,
+            Callback = function() Stream.apply() end})
+        g4:Button({Title = "Copy config", Desc = "Copy this game's config (JSON) to the clipboard", Callback = function()
+            copy(Http:JSONEncode(Data))
+            notify("Config", "Copied to clipboard", T.accent, 2)
+        end})
+
         local ap = S:SubTab({Title = "Appearance", Icon = "palette"})
         local a1 = ap:Accordion({Title = "Theme", Icon = "palette", Column = 1})
         a1:Dropdown({Title = "Accent color", Desc = "Pick an accent color preset", Flag = "UITheme", Options = ORDER, Default = curTheme,
@@ -5091,6 +5239,10 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         local a4 = ap:Accordion({Title = "Motion", Icon = "activity", Column = 2})
         a4:Toggle({Title = "Reduce animation", Desc = "Instant changes, lightest on weak devices", Flag = "UINoAnim", Default = NOANIM,
             Callback = function(v) NOANIM = v and true or false end})
+        a4:Slider({Title = "Animation speed", Desc = "Faster or slower transitions", Flag = "AnimSpeed", Min = 50, Max = 200, Step = 10, Suffix = "%", Default = 100,
+            Callback = function(v) ANIM_SPEED = math.clamp((tonumber(v) or 100) / 100, 0.5, 2) end})
+        a4:Dropdown({Title = "Animation style", Desc = "Easing used by every transition", Flag = "AnimStyle", Options = {"Smooth", "Snappy", "Soft"}, Default = "Smooth",
+            Callback = function(v) DEFAULT_STYLE = ANIM_STYLES[v] or QUINT end})
 
         ---------------- PERFORMANCE ----------------
         local pf = S:SubTab({Title = "Performance", Icon = "zap"})
@@ -5149,6 +5301,251 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             if r3dOff then pcall(function() RunService:Set3dRenderingEnabled(true) end) end
         end)
 
+        ---------------- FPS BOOST: dunia abu-abu polos (tanpa tekstur / efek), karakter tetap berwarna ----------------
+        local Boost = {on = false, level = "Ultra", keep = true, orig = setmetatable({}, {__mode = "k"}), removed = {}, tok = 0, restoring = false, rank = 3}
+        local GRAY = Color3.fromRGB(163, 165, 172)
+        local function rankOf(l) return (l == "Ultra") and 3 or ((l == "Medium") and 2 or 1) end
+        local function isChar(inst) -- bagian dari karakter pemain?
+            local p = inst.Parent
+            while p and p ~= workspace do
+                if p:IsA("Model") and Players:GetPlayerFromCharacter(p) then return true end
+                p = p.Parent
+            end
+            return false
+        end
+        local function keepProp(inst, prop) -- simpan nilai asli sekali saja (untuk dikembalikan)
+            local t = Boost.orig[inst]
+            if not t then t = {} Boost.orig[inst] = t end
+            if t[prop] == nil then t[prop] = inst[prop] end
+        end
+        local function boostApply(inst, rank)
+            if inst:IsA("BasePart") then
+                if inst:IsA("Terrain") or (Boost.keep and isChar(inst)) then return false end
+                keepProp(inst, "CastShadow") inst.CastShadow = false
+                if rank >= 2 then
+                    keepProp(inst, "Reflectance") inst.Reflectance = 0
+                    if inst:IsA("MeshPart") then
+                        keepProp(inst, "TextureID") inst.TextureID = ""
+                        keepProp(inst, "RenderFidelity") inst.RenderFidelity = Enum.RenderFidelity.Performance
+                    end
+                end
+                if rank >= 3 then -- Ultra: semua jadi plastik abu-abu polos
+                    keepProp(inst, "Material") inst.Material = Enum.Material.SmoothPlastic
+                    keepProp(inst, "Color") inst.Color = GRAY
+                end
+                return true
+            elseif inst:IsA("ParticleEmitter") or inst:IsA("Trail") or inst:IsA("Beam") or inst:IsA("Fire") or inst:IsA("Smoke") or inst:IsA("Sparkles") then
+                keepProp(inst, "Enabled") inst.Enabled = false
+                return true
+            elseif rank >= 2 and (inst:IsA("PointLight") or inst:IsA("SpotLight") or inst:IsA("SurfaceLight")) then
+                keepProp(inst, "Enabled") inst.Enabled = false
+                return true
+            elseif rank >= 2 and inst:IsA("Decal") then -- Decal + Texture
+                if Boost.keep and isChar(inst) then return false end
+                keepProp(inst, "Transparency") inst.Transparency = 1
+                return true
+            elseif rank >= 2 and inst:IsA("SpecialMesh") then
+                if Boost.keep and isChar(inst) then return false end
+                keepProp(inst, "TextureId") inst.TextureId = ""
+                return true
+            elseif rank >= 2 and inst:IsA("SurfaceAppearance") then
+                if Boost.keep and isChar(inst) then return false end
+                Boost.removed[#Boost.removed + 1] = {inst, inst.Parent}
+                inst.Parent = nil
+                return true
+            end
+            return false
+        end
+        local function boostWorld(on, rank) -- pencahayaan, efek layar, air, kualitas grafik
+            if on then
+                if not Boost.fx then
+                    Boost.fx = {shadows = Lighting.GlobalShadows, effects = {}}
+                    pcall(function() Boost.fx.quality = settings().Rendering.QualityLevel end)
+                end
+                local fx = Boost.fx
+                Lighting.GlobalShadows = false
+                for _, e in ipairs(Lighting:GetChildren()) do
+                    if e:IsA("PostEffect") and e.Enabled then fx.effects[#fx.effects + 1] = e e.Enabled = false end
+                end
+                pcall(function() settings().Rendering.QualityLevel = (rank >= 2) and Enum.QualityLevel.Level01 or Enum.QualityLevel.Level03 end)
+                if rank >= 2 then
+                    local t = workspace.Terrain
+                    pcall(function()
+                        fx.water = fx.water or {t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance, t.WaterTransparency}
+                        t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance, t.WaterTransparency = 0, 0, 0, 0.9
+                    end)
+                    pcall(function() if fx.deco == nil then fx.deco = gethiddenproperty(t, "Decoration") end sethiddenproperty(t, "Decoration", false) end)
+                end
+            else
+                local fx = Boost.fx
+                if not fx then return end
+                Lighting.GlobalShadows = fx.shadows
+                for _, e in ipairs(fx.effects) do pcall(function() e.Enabled = true end) end
+                if fx.quality then pcall(function() settings().Rendering.QualityLevel = fx.quality end) end
+                if fx.water then pcall(function() local t = workspace.Terrain t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance, t.WaterTransparency = fx.water[1], fx.water[2], fx.water[3], fx.water[4] end) end
+                if fx.deco ~= nil then pcall(function() sethiddenproperty(workspace.Terrain, "Decoration", fx.deco) end) end
+                Boost.fx = nil
+            end
+        end
+        function Boost.enable()
+            if Boost.on then return end
+            Boost.on = true
+            Boost.tok = Boost.tok + 1
+            local my = Boost.tok
+            Boost.rank = rankOf(Boost.level)
+            task.spawn(function()
+                while Boost.restoring do task.wait() end
+                if Boost.tok ~= my then return end
+                local rank = Boost.rank
+                boostWorld(true, rank)
+                if Boost.conn then Boost.conn:Disconnect() end
+                Boost.conn = workspace.DescendantAdded:Connect(function(d) pcall(boostApply, d, Boost.rank) end) -- objek baru ikut dioptimalkan
+                local list, c = workspace:GetDescendants(), 0
+                for i = 1, #list do
+                    if Boost.tok ~= my then return end
+                    local ok, ch = pcall(boostApply, list[i], rank)
+                    if ok and ch then c = c + 1 end
+                    if i % 300 == 0 then task.wait() end -- bertahap supaya game tidak membeku
+                end
+                if Boost.tok == my then notify("FPS Boost", c .. " objects optimized (" .. Boost.level .. ")", T.accent, 3) end
+            end)
+        end
+        function Boost.disable()
+            if not Boost.on then return end
+            Boost.on = false
+            Boost.tok = Boost.tok + 1
+            if Boost.conn then Boost.conn:Disconnect() Boost.conn = nil end
+            Boost.restoring = true
+            local list = {}
+            for inst, props in pairs(Boost.orig) do list[#list + 1] = {inst, props} end
+            local removed = Boost.removed
+            Boost.orig, Boost.removed = setmetatable({}, {__mode = "k"}), {}
+            task.spawn(function()
+                for i, e in ipairs(list) do
+                    local inst, props = e[1], e[2]
+                    if inst.Parent then
+                        for k, v in pairs(props) do pcall(function() inst[k] = v end) end
+                    end
+                    if i % 300 == 0 then task.wait() end
+                end
+                for _, e in ipairs(removed) do pcall(function() if e[2] and e[2].Parent then e[1].Parent = e[2] end end) end
+                boostWorld(false)
+                Boost.restoring = false
+                notify("FPS Boost", "Graphics restored", T.accent, 2)
+            end)
+        end
+        function Boost.reapply()
+            if not Boost.on then return end
+            Boost.disable()
+            task.spawn(function()
+                while Boost.restoring do task.wait() end
+                Boost.enable()
+            end)
+        end
+        local bst = pf:Accordion({Title = "FPS Boost", Icon = "zap", Column = 2})
+        local boostFlag = false
+        bst:Toggle({Title = "FPS Boost", Desc = "Flat gray world, no effects. Characters stay colored", Flag = "FpsBoost", Default = false,
+            Callback = function(v)
+                boostFlag = v and true or false
+                if booting then
+                    if v then task.delay(1.5, function() if boostFlag then Boost.enable() end end) end -- saat load: tunggu pilihan level & karakter terbaca dulu
+                    return
+                end
+                if v then Boost.enable() else Boost.disable() end
+            end})
+        bst:Dropdown({Title = "Boost level", Desc = "Light = effects off, Medium = no textures, Ultra = gray potato", Flag = "BoostLevel", Options = {"Light", "Medium", "Ultra"}, Default = "Ultra",
+            Callback = function(v) Boost.level = v if not booting then Boost.reapply() end end})
+        bst:Toggle({Title = "Keep characters colored", Desc = "Players stay normal while the world turns gray", Flag = "BoostChars", Default = true,
+            Callback = function(v) Boost.keep = v and true or false if not booting then Boost.reapply() end end})
+        bst:Button({Title = "Re-scan world", Desc = "Optimize objects that loaded after boosting", Callback = function()
+            if Boost.on then Boost.reapply() else notify("FPS Boost", "Turn on FPS Boost first", T.warn, 2) end
+        end})
+        gui.Destroying:Connect(function() if Boost.on then Boost.disable() end end)
+
+        ---------------- GRAPHICS & AUDIO ----------------
+        local gx = pf:Accordion({Title = "Graphics & Audio", Icon = "gauge", Column = 1})
+        local qOrig
+        local qOpts = {"Default"}
+        for i = 1, 10 do qOpts[#qOpts + 1] = tostring(i) end
+        gx:Dropdown({Title = "Graphics quality", Desc = "Roblox graphics level (1 = lowest)", Flag = "GfxQuality", Options = qOpts, Default = "Default",
+            Callback = function(v)
+                pcall(function()
+                    local r = settings().Rendering
+                    if v == "Default" then
+                        if qOrig then r.QualityLevel = qOrig qOrig = nil end
+                    else
+                        qOrig = qOrig or r.QualityLevel
+                        r.QualityLevel = Enum.QualityLevel[string.format("Level%02d", tonumber(v))]
+                    end
+                end)
+            end})
+        local focusConns = {}
+        gx:Toggle({Title = "Unfocused FPS limit", Desc = "Drops to 15 FPS while Roblox is in the background", Flag = "UnfocusFps", Default = false,
+            Callback = function(v)
+                for _, c in ipairs(focusConns) do c:Disconnect() end
+                focusConns = {}
+                if not v or not setfpscap then return end
+                focusConns[1] = UIS.WindowFocusReleased:Connect(function() pcall(setfpscap, 15) end)
+                focusConns[2] = UIS.WindowFocused:Connect(function()
+                    local c = F.FpsCap
+                    pcall(setfpscap, (c == "Unlimited") and 0 or (tonumber(c) or 60))
+                end)
+            end})
+        local volOrig
+        gx:Toggle({Title = "Mute game audio", Desc = "Sets the Roblox master volume to 0", Flag = "MuteGame", Default = false,
+            Callback = function(v)
+                pcall(function()
+                    local ugs = UserSettings():GetService("UserGameSettings")
+                    if v then
+                        volOrig = volOrig or ugs.MasterVolume
+                        ugs.MasterVolume = 0
+                    elseif volOrig then
+                        ugs.MasterVolume = volOrig
+                        volOrig = nil
+                    end
+                end)
+            end})
+        local fbConn, fbOrig
+        gx:Toggle({Title = "Fullbright", Desc = "Bright, shadowless lighting at all times", Flag = "Fullbright", Default = false,
+            Callback = function(v)
+                if fbConn then fbConn:Disconnect() fbConn = nil end
+                if v then
+                    fbOrig = fbOrig or {Lighting.Brightness, Lighting.ClockTime, Lighting.FogEnd, Lighting.GlobalShadows, Lighting.Ambient, Lighting.OutdoorAmbient}
+                    fbConn = RunService.Heartbeat:Connect(function()
+                        Lighting.Brightness, Lighting.ClockTime, Lighting.FogEnd, Lighting.GlobalShadows = 2, 14, 9e9, false
+                        Lighting.Ambient, Lighting.OutdoorAmbient = Color3.fromRGB(178, 178, 178), Color3.fromRGB(178, 178, 178)
+                    end)
+                elseif fbOrig then
+                    Lighting.Brightness, Lighting.ClockTime, Lighting.FogEnd, Lighting.GlobalShadows, Lighting.Ambient, Lighting.OutdoorAmbient = table.unpack(fbOrig)
+                    fbOrig = nil
+                end
+            end})
+        local fovConn, fovOrig, fovVal = nil, nil, 70
+        local function fovApply(on)
+            if fovConn then fovConn:Disconnect() fovConn = nil end
+            local cam = workspace.CurrentCamera
+            if on and cam then
+                fovOrig = fovOrig or cam.FieldOfView
+                fovConn = RunService.RenderStepped:Connect(function()
+                    local c = workspace.CurrentCamera
+                    if c then c.FieldOfView = fovVal end
+                end)
+            elseif fovOrig and cam then
+                cam.FieldOfView = fovOrig
+                fovOrig = nil
+            end
+        end
+        gx:Toggle({Title = "Custom field of view", Desc = "Keep the camera FOV at the value below", Flag = "FovOn", Default = false,
+            Callback = function(v) fovApply(v) end})
+        gx:Slider({Title = "Field of view", Flag = "FovVal", Min = 40, Max = 120, Step = 1, Default = 70, Suffix = "°",
+            Callback = function(v) fovVal = tonumber(v) or 70 end})
+        gui.Destroying:Connect(function()
+            if fbConn then fbConn:Disconnect() end
+            if fbOrig then pcall(function() Lighting.Brightness, Lighting.ClockTime, Lighting.FogEnd, Lighting.GlobalShadows, Lighting.Ambient, Lighting.OutdoorAmbient = table.unpack(fbOrig) end) end
+            fovApply(false)
+            if volOrig then pcall(function() UserSettings():GetService("UserGameSettings").MasterVolume = volOrig end) end
+        end)
+
         ---------------- NOTIFICATIONS ----------------
         local nf = S:SubTab({Title = "Notifications", Icon = "bell"})
         local n1 = nf:Accordion({Title = "Toasts", Icon = "bell", Column = 1})
@@ -5173,9 +5570,9 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         ---------------- ACCOUNT ----------------
         local ac = S:SubTab({Title = "Account", Icon = "user"})
         local c1 = ac:Accordion({Title = "Profile", Icon = "user", Column = 1})
-        c1:Info({Title = "Username", Value = LPS.Name, Copy = true})
-        c1:Info({Title = "Display name", Value = LPS.DisplayName, Copy = true})
-        c1:Info({Title = "User ID", Value = tostring(LPS.UserId), Copy = true})
+        Stream.infos[1] = c1:Info({Title = "Username", Value = LPS.Name, Copy = true})
+        Stream.infos[2] = c1:Info({Title = "Display name", Value = LPS.DisplayName, Copy = true})
+        Stream.infos[3] = c1:Info({Title = "User ID", Value = tostring(LPS.UserId), Copy = true})
         c1:Info({Title = "Account age", Value = tostring(LPS.AccountAge) .. " days"})
         c1:Info({Title = "Membership", Value = (LPS.MembershipType == Enum.MembershipType.Premium) and "Premium" or "Standard"})
         c1:Info({Title = "Role", Value = tostring(C.Role or "OWNER")})
@@ -5220,9 +5617,9 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         b1:Paragraph({Title = "About", Desc = "A dark interface with a live FPS pill, 45 accent themes, per-game configs and a full settings page."})
 
         local b2 = ab:Accordion({Title = "What's new in v" .. VERSION, Icon = "star", Column = 2})
-        b2:Paragraph({Title = "Settings", Desc = "Six sub-tabs: General, Appearance, Performance, Notifications, Account and About."})
-        b2:Paragraph({Title = "FPS Overlay", Desc = "A draggable stats pill with FPS, ping and memory. Tap the arrow for 1% low, packet loss and GPU usage."})
-        b2:Paragraph({Title = "Notifications", Desc = "Choose where toasts appear and how long they stay, or turn them off."})
+        b2:Paragraph({Title = "FPS Boost", Desc = "Performance > FPS Boost turns the world into flat gray graphics (Light, Medium or Ultra). Characters stay colored."})
+        b2:Paragraph({Title = "12 new settings", Desc = "Anti-AFK, auto rejoin, server hop, streamer mode, copy config, animation speed and style, graphics quality, unfocused FPS limit, mute, fullbright and FOV."})
+        b2:Paragraph({Title = "Smoother motion", Desc = "Opening and closing, page changes, toggles, buttons and dropdowns were re-animated."})
 
         local b3 = ab:Accordion({Title = "Actions", Icon = "send", Column = 1})
         b3:Button({Title = "Copy debug info", Desc = "Version, executor, place and user", Callback = function()
@@ -5235,6 +5632,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         end)})
 
         booting = false
+        Stream.apply()
     end
     Window._buildSettings()
     Window._buildSettings = nil
