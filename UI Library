@@ -1,4 +1,4 @@
--- FIX: FPS Boost (part tidak di-apply ulang, apply langsung tanpa lag spike), toast didesain ulang, Dashboard selalu aktif.
+-- FIX: FPS Boost v4 (governor berdasar waktu frame asli: ON / OFF / scan tanpa fps loncat), toast didesain ulang, Dashboard selalu aktif.
 -- SPHINX UI 1.0.1
 --  [ + ] 12 fitur baru di Settings: Anti-AFK, Auto rejoin, Server hop, Streamer mode, Copy config (General); Animation speed + style (Appearance);
 --        Graphics quality, Unfocused FPS limit, Mute game, Fullbright, Field of view (Performance).
@@ -5295,19 +5295,24 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         end)
 
         ---------------- FPS BOOST: dunia abu-abu polos (tanpa tekstur / efek), karakter tetap berwarna ----------------
-        -- Cara kerja:
-        --  * Objek yang SUDAH pernah dioptimalkan dicatat (seen). Part yang keluar-masuk workspace (pooling / chunk game) dilewati, tidak diproses ulang.
-        --  * Objek baru (streaming / teleport) langsung di-apply saat masuk selama masih dalam jatah waktu frame; kelebihannya antre dan dikerjakan
-        --    Heartbeat berikutnya. Jadi tidak ada part berwarna yang "ketinggalan", dan tidak ada lag spike.
-        --  * Scan awal dilakukan bertahap (lazy, per bagian map) memakai sisa jatah waktu frame.
-        --  * Tiap properti di-set terpisah (satu gagal tidak membatalkan sisanya), karakter pemain di-cache,
-        --    efek Lighting yang dinyalakan ulang game dimatikan lagi, dan saat auto-load config menunggu game.Loaded.
-        local Boost = {on = false, level = "Ultra", keep = true, orig = setmetatable({}, {__mode = "k"}), removed = {}, tok = 0, restoring = false, rank = 3,
-            q = {}, qh = 1, qt = 0, spent = 0, count = 0, conns = {}, scan = nil,
-            seen = setmetatable({}, {__mode = "k"}), chars = setmetatable({}, {__mode = "k"})}
+        -- v4 (anti lag / anti fps loncat):
+        --  * GOVERNOR: jumlah objek per frame menyesuaikan waktu frame ASLI (Heartbeat dt), bukan waktu Lua. Biaya sisi engine (render / fisika setelah
+        --    Material / Color diganti) ikut terhitung. Frame mulai berat -> jatah langsung dipotong, ada jeda; frame ringan -> jatah naik cepat.
+        --    Berlaku untuk proses ON, scan, dan proses OFF (restore).
+        --  * Tidak ada tabel per objek: nilai asli part dipadatkan jadi 1 angka (bayangan, reflectance, material, warna 8-bit). Tanpa tabel "seen".
+        --    Objek yang sudah beres terdeteksi dari nilai propertinya (nol tulis), jadi part yang keluar-masuk workspace tidak diproses ulang.
+        --  * Filter kelas di muka (cache per ClassName): Script / Attachment / Value dll langsung dilewati, tidak masuk antrean.
+        --  * Scan awal DFS bertahap (tanpa satu panggilan GetDescendants raksasa). Perubahan dunia (bayangan / kualitas / terrain) diberi jeda, tidak sekaligus.
+        --  * RenderFidelity tidak lagi diubah (memaksa mesh dibangun ulang = penyebab hitch besar).
+        local function newWeak() return setmetatable({}, {__mode = "k"}) end
+        local Boost = {on = false, level = "Ultra", keep = true, tok = 0, restoring = false, rank = 3,
+            op = newWeak(), og = newWeak(), ot = newWeak(), removed = {}, -- op: nilai asli part (angka) | og: Enabled / Transparency asli | ot: tekstur asli (string)
+            q = {}, qh = 1, qt = 0, count = 0, conns = {}, scan = nil, chars = newWeak(),
+            gov = {n = 30, max = 450, base = 1 / 60, cool = 0, used = 0}}
         local GRAY = Color3.fromRGB(163, 165, 172)
-        local BUDGET = 0.003 -- detik per frame untuk antrean + scan
-        local INLINE = 0.002 -- detik per frame untuk objek baru yang langsung di-apply saat masuk
+        local SMOOTH = Enum.Material.SmoothPlastic
+        local TCAP = 0.006 -- batas waktu Lua per frame (pengaman tambahan di luar governor)
+        local EXPAND, LEAF = 2, 99 -- scan: 2 tingkat pertama diperluas lewat GetChildren, tingkat berikutnya GetDescendants per objek
         local FX_CLASS = {ParticleEmitter = true, Trail = true, Beam = true, Fire = true, Smoke = true, Sparkles = true,
             BloomEffect = true, BlurEffect = true, ColorCorrectionEffect = true, DepthOfFieldEffect = true, SunRaysEffect = true}
         local LIGHT_CLASS = {PointLight = true, SpotLight = true, SurfaceLight = true}
@@ -5315,13 +5320,26 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         local function kfmt(n) return (n >= 1000) and (string.format("%.1fk", n / 1000)) or tostring(n) end
         local function getp(i, p) return i[p] end
         local function putp(i, p, v) i[p] = v end
-        local function setp(inst, prop, val) -- set 1 properti; simpan nilai asli sekali saja; gagal = dilewati (sisanya tetap jalan)
-            local ok, old = pcall(getp, inst, prop)
-            if not ok or old == val then return end
-            local t = Boost.orig[inst]
-            if not t then t = {} Boost.orig[inst] = t end
-            if t[prop] == nil then t[prop] = old end
-            pcall(putp, inst, prop, val)
+        local function putMat(i, v) i.Material = Enum.Material:FromValue(v) end
+
+        -- kategori per kelas (di-cache): 0 abaikan | 1 part | 7 MeshPart | 2 efek (Enabled) | 3 lampu | 4 Decal/Texture | 5 SpecialMesh | 6 SurfaceAppearance
+        local CAT = {}
+        local function catOf(inst)
+            local cn = inst.ClassName
+            local c = CAT[cn]
+            if c == nil then
+                if cn == "Terrain" then c = 0
+                elseif FX_CLASS[cn] then c = 2
+                elseif inst:IsA("MeshPart") then c = 7
+                elseif inst:IsA("BasePart") then c = 1
+                elseif LIGHT_CLASS[cn] then c = 3
+                elseif cn == "Decal" or cn == "Texture" then c = 4
+                elseif cn == "SpecialMesh" then c = 5
+                elseif cn == "SurfaceAppearance" then c = 6
+                else c = 0 end
+                CAT[cn] = c
+            end
+            return c
         end
         local function isChar(inst) -- bagian dari karakter pemain? (lookup cache, bukan GetPlayerFromCharacter)
             local set, p = Boost.chars, inst.Parent
@@ -5331,19 +5349,156 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             end
             return false
         end
-        local function restoreInst(inst)
-            local props = Boost.orig[inst]
-            if props then
-                Boost.orig[inst] = nil
-                for k, v in pairs(props) do pcall(putp, inst, k, v) end
+
+        -- nilai asli part dipadatkan jadi 1 angka: bayangan (1 bit) | reflectance (8 bit) | material (12 bit) | warna RGB (24 bit)
+        local function packO(shadow, refl, mat, col)
+            local rq = math.clamp(math.floor((refl or 0) * 255 + 0.5), 0, 255)
+            local mv = mat and math.clamp(mat.Value, 0, 4095) or 0
+            local r, g, b = 0, 0, 0
+            if col then r, g, b = math.floor(col.R * 255 + 0.5), math.floor(col.G * 255 + 0.5), math.floor(col.B * 255 + 0.5) end
+            return (shadow and 1 or 0) + 2 * rq + 512 * mv + 2097152 * (r + 256 * g + 65536 * b)
+        end
+        local function unpackO(v)
+            local s = v % 2
+            v = (v - s) / 2
+            local rq = v % 256
+            v = (v - rq) / 256
+            local mv = v % 4096
+            v = (v - mv) / 4096
+            local r = v % 256
+            v = (v - r) / 256
+            local g = v % 256
+            local b = (v - g) / 256
+            return s == 1, rq / 255, mv, r, g, b
+        end
+
+        -- GOVERNOR: jatah objek per frame mengikuti waktu frame asli
+        local function govTick(dt)
+            local G = Boost.gov
+            if G.used <= 8 then G.base = G.base + (math.min(dt, G.base * 3) - G.base) * 0.05 end -- baseline dari frame ringan saja
+            local target = G.base * 1.35 + 0.003
+            if dt > math.max(0.1, G.base * 5) then
+                G.n, G.cool = 8, 3 -- freeze besar: jatah minimum + jeda 3 frame
+            elseif dt > target * 1.6 then
+                G.n = math.max(8, math.floor(G.n * 0.5))
+            elseif dt > target then
+                G.n = math.max(8, math.floor(G.n * 0.8))
+            else
+                G.n = math.min(G.max, G.n + math.max(6, math.floor(G.n * 0.15)))
             end
+            G.used = 0
+        end
+
+        -- APPLY: 1 objek. true = ada yang diubah. Properti yang sudah sesuai tidak ditulis ulang.
+        local function boostApply(inst, cat, rank)
+            if cat == 1 or cat == 7 then
+                if Boost.keep and isChar(inst) then return false end
+                local shadow = inst.CastShadow
+                local refl, tex, mat, col
+                local need = shadow
+                if rank >= 2 then
+                    refl = inst.Reflectance
+                    if refl ~= 0 then need = true end
+                    if cat == 7 then
+                        tex = inst.TextureID
+                        if tex ~= "" then need = true end
+                    end
+                end
+                if rank >= 3 then
+                    mat, col = inst.Material, inst.Color
+                    if mat ~= SMOOTH or col ~= GRAY then need = true end
+                end
+                if not need then return false end
+                if Boost.op[inst] == nil then
+                    Boost.op[inst] = packO(shadow, refl, mat, col)
+                    if tex and tex ~= "" then Boost.ot[inst] = tex end
+                end
+                if shadow then inst.CastShadow = false end
+                if refl and refl ~= 0 then inst.Reflectance = 0 end
+                if tex and tex ~= "" then pcall(putp, inst, "TextureID", "") end
+                if mat and mat ~= SMOOTH then inst.Material = SMOOTH end
+                if col and col ~= GRAY then inst.Color = GRAY end
+                return true
+            elseif cat == 2 or cat == 3 then
+                if not inst.Enabled then return false end
+                if Boost.og[inst] == nil then Boost.og[inst] = 1 end
+                inst.Enabled = false
+                return true
+            elseif cat == 4 then
+                if Boost.keep and isChar(inst) then return false end
+                local t = inst.Transparency
+                if t >= 1 then return false end
+                if Boost.og[inst] == nil then Boost.og[inst] = t end
+                inst.Transparency = 1
+                return true
+            elseif cat == 5 then
+                if Boost.keep and isChar(inst) then return false end
+                local t = inst.TextureId
+                if t == "" then return false end
+                if Boost.ot[inst] == nil then Boost.ot[inst] = t end
+                inst.TextureId = ""
+                return true
+            elseif cat == 6 then
+                if Boost.keep and isChar(inst) then return false end
+                local par = inst.Parent
+                if not par then return false end
+                Boost.removed[#Boost.removed + 1] = {inst, par}
+                inst.Parent = nil
+                return true
+            end
+            return false
+        end
+        local function work(d, rank, cat) -- mengembalikan "bobot" kerja untuk governor (objek yang tidak berubah murah)
+            cat = cat or catOf(d)
+            if cat == 0 or (rank < 2 and cat >= 3 and cat <= 6) then return 0 end
+            if not d.Parent then return 0 end
+            local ok, ch = pcall(boostApply, d, cat, rank)
+            if ok and ch then
+                Boost.count = Boost.count + 1
+                return (cat == 6) and 4 or 1
+            end
+            return 0.2
+        end
+
+        -- RESTORE: 1 objek, dari tabel asli yang diberikan
+        local function restoreInst(inst, op, og, ot, rank)
+            local cat = catOf(inst)
+            if cat == 1 or cat == 7 then
+                local v = op[inst]
+                if not v then return 0 end
+                op[inst] = nil
+                local sh, rf, mv, r, g, b = unpackO(v)
+                pcall(putp, inst, "CastShadow", sh)
+                if rank >= 2 then pcall(putp, inst, "Reflectance", rf) end
+                if rank >= 3 then
+                    pcall(putMat, inst, mv)
+                    pcall(putp, inst, "Color", Color3.fromRGB(r, g, b))
+                end
+                local tx = ot[inst]
+                if tx then
+                    ot[inst] = nil
+                    pcall(putp, inst, "TextureID", tx)
+                    return 2
+                end
+                return 1
+            elseif cat == 2 or cat == 3 then
+                if og[inst] then og[inst] = nil pcall(putp, inst, "Enabled", true) return 1 end
+            elseif cat == 4 then
+                local v = og[inst]
+                if v then og[inst] = nil pcall(putp, inst, "Transparency", v) return 1 end
+            elseif cat == 5 then
+                local tx = ot[inst]
+                if tx then ot[inst] = nil pcall(putp, inst, "TextureId", tx) return 2 end
+            end
+            return 0
         end
         local function unboostChar(ch) -- karakter yang sempat ikut abu-abu (Character belum ter-set saat objeknya masuk) -> kembalikan
             local ok, list = pcall(ch.GetDescendants, ch)
             if ok then
                 for i = 1, #list do
-                    local cn = list[i].ClassName
-                    if not FX_CLASS[cn] and not LIGHT_CLASS[cn] then restoreInst(list[i]) end -- partikel / lampu tetap mati
+                    local c = list[i]
+                    local cat = catOf(c)
+                    if cat == 1 or cat == 7 or cat == 4 or cat == 5 then restoreInst(c, Boost.op, Boost.og, Boost.ot, Boost.rank) end -- partikel / lampu tetap mati
                 end
             end
             local rem = Boost.removed
@@ -5362,88 +5517,58 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                 if Boost.on and Boost.keep then task.defer(unboostChar, ch) end
             end)
         end
-        local function boostApply(inst, rank)
-            local cn = inst.ClassName
-            if FX_CLASS[cn] then
-                setp(inst, "Enabled", false)
-                return true
-            elseif inst:IsA("BasePart") then
-                if cn == "Terrain" or (Boost.keep and isChar(inst)) then return false end
-                setp(inst, "CastShadow", false)
-                if rank >= 2 then
-                    setp(inst, "Reflectance", 0)
-                    if inst:IsA("MeshPart") then
-                        setp(inst, "TextureID", "")
-                        setp(inst, "RenderFidelity", Enum.RenderFidelity.Performance)
-                    end
-                end
-                if rank >= 3 then -- Ultra: semua jadi plastik abu-abu polos
-                    setp(inst, "Material", Enum.Material.SmoothPlastic)
-                    setp(inst, "Color", GRAY)
-                end
-                return true
-            elseif rank >= 2 and LIGHT_CLASS[cn] then
-                setp(inst, "Enabled", false)
-                return true
-            elseif rank >= 2 and (cn == "Decal" or cn == "Texture") then
-                if Boost.keep and isChar(inst) then return false end
-                setp(inst, "Transparency", 1)
-                return true
-            elseif rank >= 2 and cn == "SpecialMesh" then
-                if Boost.keep and isChar(inst) then return false end
-                setp(inst, "TextureId", "")
-                return true
-            elseif rank >= 2 and cn == "SurfaceAppearance" then
-                if Boost.keep and isChar(inst) then return false end
-                local par = inst.Parent
-                if par then
-                    Boost.removed[#Boost.removed + 1] = {inst, par}
-                    inst.Parent = nil
-                end
-                return true
+
+        -- PERUBAHAN DUNIA: diberi jeda antar langkah supaya hitch-nya tidak menumpuk di satu frame
+        local function worldOn(my, rank)
+            if not Boost.fx then
+                Boost.fx = {shadows = Lighting.GlobalShadows}
+                pcall(function() Boost.fx.quality = settings().Rendering.QualityLevel end)
             end
-            return false
+            local fx = Boost.fx
+            Lighting.GlobalShadows = false
+            task.wait(0.5)
+            if Boost.tok ~= my then return end
+            pcall(function() settings().Rendering.QualityLevel = (rank >= 2) and Enum.QualityLevel.Level01 or Enum.QualityLevel.Level03 end)
+            if rank < 2 then return end
+            task.wait(0.5)
+            if Boost.tok ~= my then return end
+            local t = workspace.Terrain
+            pcall(function()
+                fx.water = fx.water or {t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance, t.WaterTransparency}
+                t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance, t.WaterTransparency = 0, 0, 0, 0.9
+            end)
+            task.wait(0.3)
+            if Boost.tok ~= my then return end
+            pcall(function() if fx.deco == nil then fx.deco = gethiddenproperty(t, "Decoration") end sethiddenproperty(t, "Decoration", false) end)
         end
-        local function applyOne(d, rank) -- 1 objek: lewati kalau sudah pernah beres / sudah hilang
-            if Boost.seen[d] or not d.Parent then return end
-            local ok, ch = pcall(boostApply, d, rank)
-            if ok and ch then
-                Boost.seen[d] = true
-                Boost.count = Boost.count + 1
-            end
-        end
-        local function boostWorld(on, rank) -- pencahayaan, air, kualitas grafik
-            if on then
-                if not Boost.fx then
-                    Boost.fx = {shadows = Lighting.GlobalShadows}
-                    pcall(function() Boost.fx.quality = settings().Rendering.QualityLevel end)
-                end
-                local fx = Boost.fx
-                Lighting.GlobalShadows = false
-                pcall(function() settings().Rendering.QualityLevel = (rank >= 2) and Enum.QualityLevel.Level01 or Enum.QualityLevel.Level03 end)
-                if rank >= 2 then
-                    local t = workspace.Terrain
-                    pcall(function()
-                        fx.water = fx.water or {t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance, t.WaterTransparency}
-                        t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance, t.WaterTransparency = 0, 0, 0, 0.9
-                    end)
-                    pcall(function() if fx.deco == nil then fx.deco = gethiddenproperty(t, "Decoration") end sethiddenproperty(t, "Decoration", false) end)
-                end
-            else
-                local fx = Boost.fx
-                if not fx then return end
-                Lighting.GlobalShadows = fx.shadows
-                if fx.quality then pcall(function() settings().Rendering.QualityLevel = fx.quality end) end
-                if fx.water then pcall(function() local t = workspace.Terrain t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance, t.WaterTransparency = fx.water[1], fx.water[2], fx.water[3], fx.water[4] end) end
-                if fx.deco ~= nil then pcall(function() sethiddenproperty(workspace.Terrain, "Decoration", fx.deco) end) end
-                Boost.fx = nil
-            end
+        local function worldOff()
+            local fx = Boost.fx
+            if not fx then return end
+            Lighting.GlobalShadows = fx.shadows
+            task.wait(0.4)
+            if fx.quality then pcall(function() settings().Rendering.QualityLevel = fx.quality end) end
+            task.wait(0.4)
+            if fx.water then pcall(function() local t = workspace.Terrain t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance, t.WaterTransparency = fx.water[1], fx.water[2], fx.water[3], fx.water[4] end) end
+            if fx.deco ~= nil then pcall(function() sethiddenproperty(workspace.Terrain, "Decoration", fx.deco) end) end
+            Boost.fx = nil
         end
         local function guardWorld() -- game kadang menyalakan lagi bayangan / efek layar (mis. setelah teleport atau ganti map)
             if Lighting.GlobalShadows then Lighting.GlobalShadows = false end
             for _, e in ipairs(Lighting:GetChildren()) do
-                if FX_CLASS[e.ClassName] and e.Enabled then setp(e, "Enabled", false) end
+                if FX_CLASS[e.ClassName] and e.Enabled then
+                    if Boost.og[e] == nil then Boost.og[e] = 1 end
+                    e.Enabled = false
+                end
             end
+        end
+
+        -- SCAN AWAL: DFS dengan tumpukan frame { list, i, lv }, dikerjakan bertahap mengikuti jatah governor
+        local function startScan(manual)
+            Boost.count = 0
+            Boost.scan = {manual = manual, stack = {
+                {list = Lighting:GetChildren(), i = 1, lv = EXPAND + 1},
+                {list = workspace:GetChildren(), i = 1, lv = 1},
+            }}
         end
         local function finishScan(s)
             Boost.scan = nil
@@ -5455,88 +5580,90 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             end
             notify("FPS Boost", msg, T.accent, 2.5, "zap")
         end
-        local function startScan(manual) -- daftar awal = isi workspace (diperluas lazy per bagian) + Lighting
-            local tops, mode = {}, {}
-            for _, c in ipairs(workspace:GetChildren()) do tops[#tops + 1] = c mode[#mode + 1] = 1 end -- 1 = proses dirinya lalu perluas ke anak-anaknya
-            for _, c in ipairs(Lighting:GetChildren()) do tops[#tops + 1] = c mode[#mode + 1] = 2 end -- 2 = proses dirinya + semua keturunannya
-            Boost.count = 0
-            Boost.scan = {tops = tops, mode = mode, ti = 0, manual = manual}
+        local function scanStep(s, rank, t0, used, cap) -- return used, selesai?
+            local st, it = s.stack, 0
+            while used < cap do
+                local f = st[#st]
+                if not f then return used, true end
+                local c = f.list[f.i]
+                if c == nil then
+                    st[#st] = nil -- frame habis
+                else
+                    f.i = f.i + 1
+                    used = used + work(c, rank)
+                    local lv = f.lv
+                    if lv ~= LEAF then
+                        if lv <= EXPAND then
+                            local ok, ch = pcall(c.GetChildren, c)
+                            if ok and #ch > 0 then st[#st + 1] = {list = ch, i = 1, lv = lv + 1} end
+                        else
+                            local ok, ds = pcall(c.GetDescendants, c)
+                            if ok and #ds > 0 then st[#st + 1] = {list = ds, i = 1, lv = LEAF} end
+                        end
+                    end
+                end
+                it = it + 1
+                if it % 64 == 0 and os.clock() - t0 > TCAP then break end
+            end
+            return used, false
         end
-        local function push(d) -- objek baru masuk (streaming / teleport / spawn)
-            if Boost.seen[d] then return end
-            if Boost.qh > Boost.qt and Boost.spent < INLINE then
-                local t0 = os.clock()
-                applyOne(d, Boost.rank) -- langsung di-apply, tidak ada frame berwarna
-                Boost.spent = Boost.spent + (os.clock() - t0)
+
+        -- OBJEK BARU (streaming / teleport / spawn): langsung di-apply kalau jatah frame masih ada, sisanya antre
+        local function push(d)
+            local rank = Boost.rank
+            local cat = catOf(d)
+            if cat == 0 or (rank < 2 and cat >= 3 and cat <= 6) then return end
+            local G = Boost.gov
+            if Boost.qh > Boost.qt and G.cool == 0 and G.used < G.n then
+                G.used = G.used + work(d, rank, cat)
             else
                 local n = Boost.qt + 1
                 Boost.qt = n
                 Boost.q[n] = d
             end
         end
-        local function drain() -- tiap Heartbeat: antrean live dulu (prioritas), sisa jatah waktu untuk scan awal
-            Boost.spent = 0
+        local function drain() -- tiap Heartbeat: antrean live dulu (prioritas), sisa jatah untuk scan awal
+            local G = Boost.gov
+            if G.cool > 0 then G.cool = G.cool - 1 return end
             local s = Boost.scan
             if Boost.qh > Boost.qt and not s then return end
-            local t0, rank = os.clock(), Boost.rank
-            local budget = (Boost.qt - Boost.qh > 6000) and (BUDGET * 2) or BUDGET -- antrean menumpuk (teleport jauh) -> sedikit lebih agresif
-            if Boost.qh <= Boost.qt then
-                local h, n = Boost.qh, 0
-                while h <= Boost.qt do
-                    local d = Boost.q[h]
-                    Boost.q[h] = nil
-                    h = h + 1
-                    n = n + 1
-                    if d then applyOne(d, rank) end
-                    if n % 16 == 0 and os.clock() - t0 > budget then break end
-                end
-                if h > Boost.qt then Boost.qh, Boost.qt = 1, 0 else Boost.qh = h end
+            local t0, rank, cap, it = os.clock(), Boost.rank, G.n, 0
+            while Boost.qh <= Boost.qt and G.used < cap do
+                local h = Boost.qh
+                local d = Boost.q[h]
+                Boost.q[h] = nil
+                Boost.qh = h + 1
+                if d then G.used = G.used + work(d, rank) end
+                it = it + 1
+                if it % 32 == 0 and os.clock() - t0 > TCAP then break end
             end
-            if s and Boost.scan == s and os.clock() - t0 < budget then
-                local n = 0
-                while true do
-                    if not s.list then
-                        s.ti = s.ti + 1
-                        local top, md = s.tops[s.ti], s.mode[s.ti]
-                        if not top then finishScan(s) break end
-                        if md == 1 then
-                            applyOne(top, rank)
-                            local ok, ch = pcall(top.GetChildren, top)
-                            if ok then for i = 1, #ch do s.tops[#s.tops + 1] = ch[i] s.mode[#s.mode + 1] = 2 end end
-                        else
-                            local ok, ds = pcall(top.GetDescendants, top)
-                            s.list, s.cur, s.li = ok and ds or {}, top, 0
-                        end
-                    end
-                    if s.list then
-                        local d = (s.li == 0) and s.cur or s.list[s.li]
-                        s.li = s.li + 1
-                        if s.li > #s.list then s.list = nil end
-                        if d then applyOne(d, rank) end
-                    end
-                    n = n + 1
-                    if n % 16 == 0 and os.clock() - t0 > budget then break end
-                end
+            if Boost.qh > Boost.qt then Boost.qh, Boost.qt = 1, 0 end
+            if s and Boost.scan == s and G.used < cap and os.clock() - t0 < TCAP then
+                local used, done = scanStep(s, rank, t0, G.used, cap)
+                G.used = used
+                if done then finishScan(s) end
             end
         end
+
         function Boost.enable()
             if Boost.on then return end
             Boost.on = true
             Boost.tok = Boost.tok + 1
             local my = Boost.tok
             Boost.rank = rankOf(Boost.level)
-            Boost.q, Boost.qh, Boost.qt, Boost.spent, Boost.scan = {}, 1, 0, 0, nil
-            Boost.seen = setmetatable({}, {__mode = "k"})
+            Boost.q, Boost.qh, Boost.qt, Boost.scan = {}, 1, 0, nil
+            local G = Boost.gov
+            G.n, G.cool, G.used = 30, 0, 0
             task.spawn(function()
                 while Boost.restoring do task.wait() end
                 if Boost.tok ~= my then return end
-                boostWorld(true, Boost.rank)
                 for _, plr in ipairs(Players:GetPlayers()) do hookPlayer(plr) end -- cache karakter dulu, baru scan
                 local cs = Boost.conns
                 cs[#cs + 1] = Players.PlayerAdded:Connect(hookPlayer)
                 cs[#cs + 1] = workspace.DescendantAdded:Connect(push)
                 cs[#cs + 1] = Lighting.DescendantAdded:Connect(push)
-                cs[#cs + 1] = RunService.Heartbeat:Connect(drain)
+                cs[#cs + 1] = RunService.Heartbeat:Connect(function(dt) govTick(dt) drain() end)
+                task.spawn(function() worldOn(my, Boost.rank) end)
                 task.spawn(function() -- penjaga: bayangan / efek layar yang dinyalakan ulang game
                     while Boost.on and Boost.tok == my do
                         task.wait(1.5)
@@ -5547,9 +5674,30 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                 startScan(false)
             end)
         end
-        function Boost.rescan() -- scan ulang tanpa restore (murah): objek yang sudah beres dilewati
+        function Boost.rescan() -- scan ulang tanpa restore: yang sudah beres cuma dibaca, tidak ditulis
             if not Boost.on or Boost.restoring then return end
             startScan(true)
+        end
+
+        local function pace(list, fn) -- jalankan fn(item) bertahap mengikuti governor (dipakai proses OFF)
+            local G, i, n = Boost.gov, 1, #list
+            while i <= n do
+                govTick(RunService.Heartbeat:Wait())
+                if G.cool > 0 then
+                    G.cool = G.cool - 1
+                else
+                    local t0, used, it = os.clock(), 0, 0
+                    while i <= n and used < G.n do
+                        local e = list[i]
+                        list[i] = false
+                        i = i + 1
+                        if e then used = used + fn(e) end
+                        it = it + 1
+                        if it % 32 == 0 and os.clock() - t0 > TCAP then break end
+                    end
+                    G.used = used
+                end
+            end
         end
         function Boost.disable()
             if not Boost.on then return end
@@ -5558,23 +5706,28 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             for _, c in ipairs(Boost.conns) do pcall(function() c:Disconnect() end) end
             Boost.conns = {}
             Boost.q, Boost.qh, Boost.qt, Boost.scan = {}, 1, 0, nil
-            Boost.seen = setmetatable({}, {__mode = "k"})
             Boost.restoring = true
-            local list = {}
-            for inst, props in pairs(Boost.orig) do list[#list + 1] = {inst, props} end
-            local removed = Boost.removed
-            Boost.orig, Boost.removed = setmetatable({}, {__mode = "k"}), {}
+            local op, og, ot, removed, rank = Boost.op, Boost.og, Boost.ot, Boost.removed, Boost.rank
+            Boost.op, Boost.og, Boost.ot, Boost.removed = newWeak(), newWeak(), newWeak(), {}
+            local G = Boost.gov
+            G.n, G.cool, G.used = 30, 0, 0
             task.spawn(function()
-                local t0 = os.clock()
-                for i, e in ipairs(list) do
-                    local inst, props = e[1], e[2]
-                    if inst.Parent then
-                        for k, v in pairs(props) do pcall(putp, inst, k, v) end
-                    end
-                    if i % 16 == 0 and os.clock() - t0 > 0.004 then task.wait() t0 = os.clock() end -- bertahap, tanpa lag
+                local function each(tbl)
+                    local keys = {}
+                    for k in pairs(tbl) do keys[#keys + 1] = k end
+                    pace(keys, function(inst)
+                        if inst.Parent then return restoreInst(inst, op, og, ot, rank) end
+                        return 0
+                    end)
                 end
-                for _, e in ipairs(removed) do pcall(function() if e[2] and e[2].Parent then e[1].Parent = e[2] end end) end
-                boostWorld(false)
+                each(op) -- part (bayangan / reflectance / material / warna / tekstur mesh)
+                each(og) -- efek, lampu, decal
+                each(ot) -- sisa (SpecialMesh)
+                pace(removed, function(e) -- SurfaceAppearance dipasang kembali
+                    pcall(function() if e[2] and e[2].Parent then e[1].Parent = e[2] end end)
+                    return 4
+                end)
+                worldOff()
                 Boost.restoring = false
                 notify("FPS Boost", "Off", T.accent, 1.8, "zap")
             end)
