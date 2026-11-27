@@ -1,4 +1,4 @@
--- FIX FPS Boost: objek baru (streaming/teleport) diproses lewat antrean per-frame (anti lag spike), properti di-set terpisah (tidak ada yang terlewat), cache karakter, efek Lighting dijaga, tunggu game.Loaded saat auto-load config.
+-- FIX: FPS Boost (part tidak di-apply ulang, apply langsung tanpa lag spike), toast didesain ulang, Dashboard selalu aktif.
 -- SPHINX UI 1.0.1
 --  [ + ] 12 fitur baru di Settings: Anti-AFK, Auto rejoin, Server hop, Streamer mode, Copy config (General); Animation speed + style (Appearance);
 --        Graphics quality, Unfocused FPS limit, Mute game, Fullbright, Field of view (Performance).
@@ -1547,21 +1547,15 @@ function SPHINX:CreateWindow(C)
         local GAP = 8 -- jarak antar toast ada DI DALAM wrap (di atas kartu), jadi tumpukan bisa menutup tanpa loncat
         local H = acts and 88 or 58
         local wrap = new("Frame", {Size = UDim2.new(1, 0, 0, NOANIM and (H + GAP) or 0), BackgroundTransparency = 1, LayoutOrder = toastN}, toastHolder)
-        local m = new("Frame", {Position = UDim2.fromOffset(310 * Toast.side, GAP), Size = UDim2.new(1, 0, 1, -GAP), BackgroundColor3 = T.bg:Lerp(T.el, 0.4), BackgroundTransparency = 0.02, BorderSizePixel = 0, ClipsDescendants = true}, wrap)
-        corner(m, 9)
-        stroke(m, color, 1, 0.82)
-        new("Frame", {Name = "Edge", Size = UDim2.new(0, 3, 1, 0), BackgroundColor3 = color, BorderSizePixel = 0}, m) -- garis aksen di tepi kiri
-        local ic = new("Frame", {Position = UDim2.fromOffset(15, 17), Size = UDim2.fromOffset(22, 22), BackgroundTransparency = 1, BorderSizePixel = 0}, m)
-        corner(ic, "full")
-        stroke(ic, color, 1.6, 0) -- ring ikon
+        local m = new("Frame", {Position = UDim2.fromOffset(310 * Toast.side, GAP), Size = UDim2.new(1, 0, 1, -GAP), BackgroundColor3 = T.bg:Lerp(T.el, 0.55), BackgroundTransparency = 0.04, BorderSizePixel = 0, ClipsDescendants = true}, wrap)
+        corner(m, 12)
+        stroke(m, WHITE, 1, 0.92) -- tepi tipis netral (tanpa garis warna di samping)
+        local ic = new("Frame", {Position = UDim2.fromOffset(12, 11), Size = UDim2.fromOffset(28, 28), BackgroundColor3 = color, BackgroundTransparency = 0.84, BorderSizePixel = 0}, m)
+        corner(ic, 8)
         local glyph = img or ((color == T.bad) and "close") or ((color == T.warn) and "info") or "check"
         mkIcon(ic, glyph, img and 14 or 12, color, {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5)})
-        local pulse = new("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0}, ic)
-        corner(pulse, "full")
-        local pst = stroke(pulse, color, 1.4, 0.25) -- cincin berdenyut sekali saat toast masuk
-        text(m, {Text = tostring(title or ""), Position = UDim2.fromOffset(48, 9), Size = UDim2.new(1, -58, 0, 16), W = 3, TextSize = 12, TextColor3 = color})
-        text(m, {Text = tostring(msg or ""), Position = UDim2.fromOffset(48, 27), Size = UDim2.new(1, -58, 0, 24), TextSize = 10, W = 2, TextColor3 = Color3.fromRGB(226, 226, 232), TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top})
-        local pr = new("Frame", {Position = UDim2.new(0, 0, 1, -3), Size = UDim2.new(1, 0, 0, 3), BackgroundColor3 = color, BorderSizePixel = 0}, m)
+        text(m, {Text = tostring(title or ""), Position = UDim2.fromOffset(50, 8), Size = UDim2.new(1, -62, 0, 15), W = 3, TextSize = 12, TextColor3 = T.text})
+        text(m, {Text = tostring(msg or ""), Position = UDim2.fromOffset(50, 24), Size = UDim2.new(1, -62, 0, 22), TextSize = 10, W = 2, TextColor3 = T.mid, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top})
         local gone, entry = false, {}
         local function leave()
             if gone then return end
@@ -1579,7 +1573,7 @@ function SPHINX:CreateWindow(C)
         if acts then
             local lum = color.R * 0.299 + color.G * 0.587 + color.B * 0.114
             local onCol = (lum > 0.62) and Color3.fromRGB(14, 14, 20) or WHITE
-            local row = new("Frame", {Position = UDim2.fromOffset(48, 56), Size = UDim2.new(1, -58, 0, 22), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 8}, m)
+            local row = new("Frame", {Position = UDim2.fromOffset(50, 52), Size = UDim2.new(1, -62, 0, 22), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 8}, m)
             new("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, row)
             for i, a in ipairs(acts) do
                 if type(a) ~= "table" then a = {Text = tostring(a)} end
@@ -1598,10 +1592,7 @@ function SPHINX:CreateWindow(C)
             end
         end
         play(wrap, {Size = UDim2.new(1, 0, 0, H + GAP)}, 0.3)
-        play(m, {Position = UDim2.fromOffset(0, GAP)}, 0.5, BACK)
-        play(pulse, {Size = UDim2.fromOffset(46, 46)}, 0.7)
-        play(pst, {Transparency = 1}, 0.7)
-        play(pr, {Size = UDim2.new(0, 0, 0, 3)}, dur, Enum.EasingStyle.Linear)
+        play(m, {Position = UDim2.fromOffset(0, GAP)}, 0.42)
         task.delay(dur, leave)
     end
 
@@ -4184,7 +4175,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
     local function addTab(gname, c)
         c = (type(c) == "table") and c or {Title = tostring(c)}
         local title = tostring(c.Title or c.Name or "Tab")
-        local dash = title:lower() == "dashboard" and c.Dashboard ~= false
+        local dash = title:lower() == "dashboard"
         if dash and Window.Dashboard then return Window.Dashboard end -- sudah ada otomatis, jangan dobel
         local p = createPage(gname, title, c.Icon, dash and "Overview, leaderboard and changelogs" or (c.Subtitle or c.Desc), dash and 1 or c.Columns)
         Window.Tabs[p.key] = p
@@ -4205,7 +4196,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
     -- gaya lama (tanpa grup): halaman masuk ke grup "Menu" (atau c.Group)
     function Window:Tab(c)
         c = (type(c) == "table") and c or {Title = tostring(c)}
-        if Window.Dashboard and tostring(c.Title or c.Name or ""):lower() == "dashboard" and c.Dashboard ~= false then return Window.Dashboard end
+        if Window.Dashboard and tostring(c.Title or c.Name or ""):lower() == "dashboard" then return Window.Dashboard end
         local gname = tostring(c.Group or "Menu")
         if not groups[gname] then createGroup(gname, c.GroupIcon or ((gname == "Menu") and "grid" or nil)) end
         return addTab(gname, c)
@@ -4248,8 +4239,9 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
 
     -- DASHBOARD OTOMATIS: grup "Loaded" > tab "Dashboard", dibuat langsung di sini (pertama di sidebar, jadi halaman awal).
     -- Tidak perlu Window:Group / :Tab dari script kamu. Isi tambahan: Window.Dashboard:Accordion({...}), dst.
-    if C.AutoDashboard ~= false then
-        dashGroup = tostring(C.DashboardGroup or "Loaded")
+    -- SELALU AKTIF: tidak ada opsi untuk mematikan (AutoDashboard / Dashboard = false diabaikan), tidak perlu di-set true.
+    dashGroup = tostring(C.DashboardGroup or "Loaded")
+    do
         local dg = Window:Group({Title = dashGroup, Icon = "grid"})
         Window.Dashboard = dg:Tab({Title = "Dashboard", Icon = "grid"})
     end
@@ -5303,18 +5295,24 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         end)
 
         ---------------- FPS BOOST: dunia abu-abu polos (tanpa tekstur / efek), karakter tetap berwarna ----------------
-        -- FIX: (1) objek baru (streaming / teleport / respawn) masuk ANTREAN lalu diproses per-frame dengan batas waktu -> tidak ada lag spike
-        --      (2) tiap properti di-set terpisah (satu gagal tidak membatalkan sisanya) dan nilai asli disimpan sekali
-        --      (3) karakter pemain di-cache (tanpa GetPlayerFromCharacter per objek); karakter yang telat ter-set otomatis dikembalikan berwarna
-        --      (4) efek Lighting yang dinyalakan ulang game ikut dimatikan lagi; saat load config menunggu game.Loaded
+        -- Cara kerja:
+        --  * Objek yang SUDAH pernah dioptimalkan dicatat (seen). Part yang keluar-masuk workspace (pooling / chunk game) dilewati, tidak diproses ulang.
+        --  * Objek baru (streaming / teleport) langsung di-apply saat masuk selama masih dalam jatah waktu frame; kelebihannya antre dan dikerjakan
+        --    Heartbeat berikutnya. Jadi tidak ada part berwarna yang "ketinggalan", dan tidak ada lag spike.
+        --  * Scan awal dilakukan bertahap (lazy, per bagian map) memakai sisa jatah waktu frame.
+        --  * Tiap properti di-set terpisah (satu gagal tidak membatalkan sisanya), karakter pemain di-cache,
+        --    efek Lighting yang dinyalakan ulang game dimatikan lagi, dan saat auto-load config menunggu game.Loaded.
         local Boost = {on = false, level = "Ultra", keep = true, orig = setmetatable({}, {__mode = "k"}), removed = {}, tok = 0, restoring = false, rank = 3,
-            q = {}, qh = 1, qt = 0, done = 0, count = 0, conns = {}, chars = setmetatable({}, {__mode = "k"})}
+            q = {}, qh = 1, qt = 0, spent = 0, count = 0, conns = {}, scan = nil,
+            seen = setmetatable({}, {__mode = "k"}), chars = setmetatable({}, {__mode = "k"})}
         local GRAY = Color3.fromRGB(163, 165, 172)
-        local BUDGET = 0.003 -- detik per frame untuk memproses antrean (makin kecil = makin halus, tapi selesai lebih lama)
+        local BUDGET = 0.003 -- detik per frame untuk antrean + scan
+        local INLINE = 0.002 -- detik per frame untuk objek baru yang langsung di-apply saat masuk
         local FX_CLASS = {ParticleEmitter = true, Trail = true, Beam = true, Fire = true, Smoke = true, Sparkles = true,
             BloomEffect = true, BlurEffect = true, ColorCorrectionEffect = true, DepthOfFieldEffect = true, SunRaysEffect = true}
         local LIGHT_CLASS = {PointLight = true, SpotLight = true, SurfaceLight = true}
         local function rankOf(l) return (l == "Ultra") and 3 or ((l == "Medium") and 2 or 1) end
+        local function kfmt(n) return (n >= 1000) and (string.format("%.1fk", n / 1000)) or tostring(n) end
         local function getp(i, p) return i[p] end
         local function putp(i, p, v) i[p] = v end
         local function setp(inst, prop, val) -- set 1 properti; simpan nilai asli sekali saja; gagal = dilewati (sisanya tetap jalan)
@@ -5406,6 +5404,14 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             end
             return false
         end
+        local function applyOne(d, rank) -- 1 objek: lewati kalau sudah pernah beres / sudah hilang
+            if Boost.seen[d] or not d.Parent then return end
+            local ok, ch = pcall(boostApply, d, rank)
+            if ok and ch then
+                Boost.seen[d] = true
+                Boost.count = Boost.count + 1
+            end
+        end
         local function boostWorld(on, rank) -- pencahayaan, air, kualitas grafik
             if on then
                 if not Boost.fx then
@@ -5439,50 +5445,79 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                 if FX_CLASS[e.ClassName] and e.Enabled then setp(e, "Enabled", false) end
             end
         end
-        local function checkScanDone()
-            local m = Boost.scanMark
-            if m and Boost.done >= m then
-                Boost.scanMark = nil
-                notify("FPS Boost", Boost.count .. " objects optimized (" .. Boost.level .. ")", T.accent, 3)
+        local function finishScan(s)
+            Boost.scan = nil
+            local msg
+            if s.manual then
+                msg = (Boost.count > 0) and ("+" .. kfmt(Boost.count) .. " objects") or "Nothing new"
+            else
+                msg = Boost.level .. " \194\183 " .. kfmt(Boost.count) .. " objects" -- "Ultra · 12.4k objects"
             end
+            notify("FPS Boost", msg, T.accent, 2.5, "zap")
         end
-        local function drain() -- proses antrean dengan batas waktu per frame (dipanggil tiap Heartbeat)
-            if Boost.qh > Boost.qt then return end
-            local budget = (Boost.qt - Boost.qh > 6000) and (BUDGET * 2) or BUDGET -- antrean menumpuk (teleport jauh) -> sedikit lebih agresif
-            local t0, rank, n, h = os.clock(), Boost.rank, 0, Boost.qh
-            while h <= Boost.qt do
-                local d = Boost.q[h]
-                Boost.q[h] = nil
-                h = h + 1
-                n = n + 1
-                if d and d.Parent then
-                    local ok, ch = pcall(boostApply, d, rank)
-                    if ok and ch then Boost.count = Boost.count + 1 end
-                end
-                if n % 16 == 0 and os.clock() - t0 > budget then break end
-            end
-            Boost.done = Boost.done + n
-            if h > Boost.qt then Boost.qh, Boost.qt = 1, 0 else Boost.qh = h end
-            checkScanDone()
-        end
-        local function scanAll(my) -- masukkan semua objek yang sudah ada ke antrean (bertahap, tidak membekukan game)
+        local function startScan(manual) -- daftar awal = isi workspace (diperluas lazy per bagian) + Lighting
+            local tops, mode = {}, {}
+            for _, c in ipairs(workspace:GetChildren()) do tops[#tops + 1] = c mode[#mode + 1] = 1 end -- 1 = proses dirinya lalu perluas ke anak-anaknya
+            for _, c in ipairs(Lighting:GetChildren()) do tops[#tops + 1] = c mode[#mode + 1] = 2 end -- 2 = proses dirinya + semua keturunannya
             Boost.count = 0
-            local function pushList(list)
-                for i = 1, #list do
-                    local n = Boost.qt + 1
-                    Boost.qt = n
-                    Boost.q[n] = list[i]
-                    if i % 4000 == 0 then
-                        task.wait()
-                        if Boost.tok ~= my then return false end
-                    end
-                end
-                return true
+            Boost.scan = {tops = tops, mode = mode, ti = 0, manual = manual}
+        end
+        local function push(d) -- objek baru masuk (streaming / teleport / spawn)
+            if Boost.seen[d] then return end
+            if Boost.qh > Boost.qt and Boost.spent < INLINE then
+                local t0 = os.clock()
+                applyOne(d, Boost.rank) -- langsung di-apply, tidak ada frame berwarna
+                Boost.spent = Boost.spent + (os.clock() - t0)
+            else
+                local n = Boost.qt + 1
+                Boost.qt = n
+                Boost.q[n] = d
             end
-            if not pushList(workspace:GetDescendants()) then return end
-            if not pushList(Lighting:GetDescendants()) then return end
-            Boost.scanMark = Boost.done + math.max(0, Boost.qt - Boost.qh + 1)
-            checkScanDone()
+        end
+        local function drain() -- tiap Heartbeat: antrean live dulu (prioritas), sisa jatah waktu untuk scan awal
+            Boost.spent = 0
+            local s = Boost.scan
+            if Boost.qh > Boost.qt and not s then return end
+            local t0, rank = os.clock(), Boost.rank
+            local budget = (Boost.qt - Boost.qh > 6000) and (BUDGET * 2) or BUDGET -- antrean menumpuk (teleport jauh) -> sedikit lebih agresif
+            if Boost.qh <= Boost.qt then
+                local h, n = Boost.qh, 0
+                while h <= Boost.qt do
+                    local d = Boost.q[h]
+                    Boost.q[h] = nil
+                    h = h + 1
+                    n = n + 1
+                    if d then applyOne(d, rank) end
+                    if n % 16 == 0 and os.clock() - t0 > budget then break end
+                end
+                if h > Boost.qt then Boost.qh, Boost.qt = 1, 0 else Boost.qh = h end
+            end
+            if s and Boost.scan == s and os.clock() - t0 < budget then
+                local n = 0
+                while true do
+                    if not s.list then
+                        s.ti = s.ti + 1
+                        local top, md = s.tops[s.ti], s.mode[s.ti]
+                        if not top then finishScan(s) break end
+                        if md == 1 then
+                            applyOne(top, rank)
+                            local ok, ch = pcall(top.GetChildren, top)
+                            if ok then for i = 1, #ch do s.tops[#s.tops + 1] = ch[i] s.mode[#s.mode + 1] = 2 end end
+                        else
+                            local ok, ds = pcall(top.GetDescendants, top)
+                            s.list, s.cur, s.li = ok and ds or {}, top, 0
+                        end
+                    end
+                    if s.list then
+                        local d = (s.li == 0) and s.cur or s.list[s.li]
+                        s.li = s.li + 1
+                        if s.li > #s.list then s.list = nil end
+                        if d then applyOne(d, rank) end
+                    end
+                    n = n + 1
+                    if n % 16 == 0 and os.clock() - t0 > budget then break end
+                end
+            end
         end
         function Boost.enable()
             if Boost.on then return end
@@ -5490,7 +5525,8 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             Boost.tok = Boost.tok + 1
             local my = Boost.tok
             Boost.rank = rankOf(Boost.level)
-            Boost.q, Boost.qh, Boost.qt, Boost.done, Boost.count, Boost.scanMark = {}, 1, 0, 0, 0, nil
+            Boost.q, Boost.qh, Boost.qt, Boost.spent, Boost.scan = {}, 1, 0, 0, nil
+            Boost.seen = setmetatable({}, {__mode = "k"})
             task.spawn(function()
                 while Boost.restoring do task.wait() end
                 if Boost.tok ~= my then return end
@@ -5498,7 +5534,6 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                 for _, plr in ipairs(Players:GetPlayers()) do hookPlayer(plr) end -- cache karakter dulu, baru scan
                 local cs = Boost.conns
                 cs[#cs + 1] = Players.PlayerAdded:Connect(hookPlayer)
-                local function push(d) local n = Boost.qt + 1 Boost.qt = n Boost.q[n] = d end -- objek baru (streaming / teleport) -> antrean
                 cs[#cs + 1] = workspace.DescendantAdded:Connect(push)
                 cs[#cs + 1] = Lighting.DescendantAdded:Connect(push)
                 cs[#cs + 1] = RunService.Heartbeat:Connect(drain)
@@ -5509,13 +5544,12 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                         pcall(guardWorld)
                     end
                 end)
-                scanAll(my)
+                startScan(false)
             end)
         end
         function Boost.rescan() -- scan ulang tanpa restore (murah): objek yang sudah beres dilewati
             if not Boost.on or Boost.restoring then return end
-            local my = Boost.tok
-            task.spawn(function() scanAll(my) end)
+            startScan(true)
         end
         function Boost.disable()
             if not Boost.on then return end
@@ -5523,7 +5557,8 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             Boost.tok = Boost.tok + 1
             for _, c in ipairs(Boost.conns) do pcall(function() c:Disconnect() end) end
             Boost.conns = {}
-            Boost.q, Boost.qh, Boost.qt, Boost.scanMark = {}, 1, 0, nil
+            Boost.q, Boost.qh, Boost.qt, Boost.scan = {}, 1, 0, nil
+            Boost.seen = setmetatable({}, {__mode = "k"})
             Boost.restoring = true
             local list = {}
             for inst, props in pairs(Boost.orig) do list[#list + 1] = {inst, props} end
@@ -5541,7 +5576,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                 for _, e in ipairs(removed) do pcall(function() if e[2] and e[2].Parent then e[1].Parent = e[2] end end) end
                 boostWorld(false)
                 Boost.restoring = false
-                notify("FPS Boost", "Graphics restored", T.accent, 2)
+                notify("FPS Boost", "Off", T.accent, 1.8, "zap")
             end)
         end
         function Boost.reapply()
@@ -5574,7 +5609,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         bst:Toggle({Title = "Keep characters colored", Desc = "Players stay normal while the world turns gray", Flag = "BoostChars", Default = true,
             Callback = function(v) Boost.keep = v and true or false if not booting then Boost.reapply() end end})
         bst:Button({Title = "Re-scan world", Desc = "Optimize objects that loaded after boosting", Callback = function()
-            if Boost.on then Boost.rescan() else notify("FPS Boost", "Turn on FPS Boost first", T.warn, 2) end
+            if Boost.on then Boost.rescan() else notify("FPS Boost", "Turn it on first", T.warn, 2, "zap") end
         end})
         gui.Destroying:Connect(function() if Boost.on then Boost.disable() end end)
 
