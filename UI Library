@@ -1,3 +1,4 @@
+-- FIX FPS Boost: objek baru (streaming/teleport) diproses lewat antrean per-frame (anti lag spike), properti di-set terpisah (tidak ada yang terlewat), cache karakter, efek Lighting dijaga, tunggu game.Loaded saat auto-load config.
 -- SPHINX UI 1.0.1
 --  [ + ] 12 fitur baru di Settings: Anti-AFK, Auto rejoin, Server hop, Streamer mode, Copy config (General); Animation speed + style (Appearance);
 --        Graphics quality, Unfocused FPS limit, Mute game, Fullbright, Field of view (Performance).
@@ -5302,71 +5303,117 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         end)
 
         ---------------- FPS BOOST: dunia abu-abu polos (tanpa tekstur / efek), karakter tetap berwarna ----------------
-        local Boost = {on = false, level = "Ultra", keep = true, orig = setmetatable({}, {__mode = "k"}), removed = {}, tok = 0, restoring = false, rank = 3}
+        -- FIX: (1) objek baru (streaming / teleport / respawn) masuk ANTREAN lalu diproses per-frame dengan batas waktu -> tidak ada lag spike
+        --      (2) tiap properti di-set terpisah (satu gagal tidak membatalkan sisanya) dan nilai asli disimpan sekali
+        --      (3) karakter pemain di-cache (tanpa GetPlayerFromCharacter per objek); karakter yang telat ter-set otomatis dikembalikan berwarna
+        --      (4) efek Lighting yang dinyalakan ulang game ikut dimatikan lagi; saat load config menunggu game.Loaded
+        local Boost = {on = false, level = "Ultra", keep = true, orig = setmetatable({}, {__mode = "k"}), removed = {}, tok = 0, restoring = false, rank = 3,
+            q = {}, qh = 1, qt = 0, done = 0, count = 0, conns = {}, chars = setmetatable({}, {__mode = "k"})}
         local GRAY = Color3.fromRGB(163, 165, 172)
+        local BUDGET = 0.003 -- detik per frame untuk memproses antrean (makin kecil = makin halus, tapi selesai lebih lama)
+        local FX_CLASS = {ParticleEmitter = true, Trail = true, Beam = true, Fire = true, Smoke = true, Sparkles = true,
+            BloomEffect = true, BlurEffect = true, ColorCorrectionEffect = true, DepthOfFieldEffect = true, SunRaysEffect = true}
+        local LIGHT_CLASS = {PointLight = true, SpotLight = true, SurfaceLight = true}
         local function rankOf(l) return (l == "Ultra") and 3 or ((l == "Medium") and 2 or 1) end
-        local function isChar(inst) -- bagian dari karakter pemain?
-            local p = inst.Parent
+        local function getp(i, p) return i[p] end
+        local function putp(i, p, v) i[p] = v end
+        local function setp(inst, prop, val) -- set 1 properti; simpan nilai asli sekali saja; gagal = dilewati (sisanya tetap jalan)
+            local ok, old = pcall(getp, inst, prop)
+            if not ok or old == val then return end
+            local t = Boost.orig[inst]
+            if not t then t = {} Boost.orig[inst] = t end
+            if t[prop] == nil then t[prop] = old end
+            pcall(putp, inst, prop, val)
+        end
+        local function isChar(inst) -- bagian dari karakter pemain? (lookup cache, bukan GetPlayerFromCharacter)
+            local set, p = Boost.chars, inst.Parent
             while p and p ~= workspace do
-                if p:IsA("Model") and Players:GetPlayerFromCharacter(p) then return true end
+                if set[p] then return true end
                 p = p.Parent
             end
             return false
         end
-        local function keepProp(inst, prop) -- simpan nilai asli sekali saja (untuk dikembalikan)
-            local t = Boost.orig[inst]
-            if not t then t = {} Boost.orig[inst] = t end
-            if t[prop] == nil then t[prop] = inst[prop] end
+        local function restoreInst(inst)
+            local props = Boost.orig[inst]
+            if props then
+                Boost.orig[inst] = nil
+                for k, v in pairs(props) do pcall(putp, inst, k, v) end
+            end
+        end
+        local function unboostChar(ch) -- karakter yang sempat ikut abu-abu (Character belum ter-set saat objeknya masuk) -> kembalikan
+            local ok, list = pcall(ch.GetDescendants, ch)
+            if ok then
+                for i = 1, #list do
+                    local cn = list[i].ClassName
+                    if not FX_CLASS[cn] and not LIGHT_CLASS[cn] then restoreInst(list[i]) end -- partikel / lampu tetap mati
+                end
+            end
+            local rem = Boost.removed
+            for i = #rem, 1, -1 do
+                local e = rem[i]
+                if e[2] and (e[2] == ch or e[2]:IsDescendantOf(ch)) then
+                    pcall(function() e[1].Parent = e[2] end)
+                    table.remove(rem, i)
+                end
+            end
+        end
+        local function hookPlayer(plr)
+            if plr.Character then Boost.chars[plr.Character] = true end
+            Boost.conns[#Boost.conns + 1] = plr.CharacterAdded:Connect(function(ch)
+                Boost.chars[ch] = true
+                if Boost.on and Boost.keep then task.defer(unboostChar, ch) end
+            end)
         end
         local function boostApply(inst, rank)
-            if inst:IsA("BasePart") then
-                if inst:IsA("Terrain") or (Boost.keep and isChar(inst)) then return false end
-                keepProp(inst, "CastShadow") inst.CastShadow = false
+            local cn = inst.ClassName
+            if FX_CLASS[cn] then
+                setp(inst, "Enabled", false)
+                return true
+            elseif inst:IsA("BasePart") then
+                if cn == "Terrain" or (Boost.keep and isChar(inst)) then return false end
+                setp(inst, "CastShadow", false)
                 if rank >= 2 then
-                    keepProp(inst, "Reflectance") inst.Reflectance = 0
+                    setp(inst, "Reflectance", 0)
                     if inst:IsA("MeshPart") then
-                        keepProp(inst, "TextureID") inst.TextureID = ""
-                        keepProp(inst, "RenderFidelity") inst.RenderFidelity = Enum.RenderFidelity.Performance
+                        setp(inst, "TextureID", "")
+                        setp(inst, "RenderFidelity", Enum.RenderFidelity.Performance)
                     end
                 end
                 if rank >= 3 then -- Ultra: semua jadi plastik abu-abu polos
-                    keepProp(inst, "Material") inst.Material = Enum.Material.SmoothPlastic
-                    keepProp(inst, "Color") inst.Color = GRAY
+                    setp(inst, "Material", Enum.Material.SmoothPlastic)
+                    setp(inst, "Color", GRAY)
                 end
                 return true
-            elseif inst:IsA("ParticleEmitter") or inst:IsA("Trail") or inst:IsA("Beam") or inst:IsA("Fire") or inst:IsA("Smoke") or inst:IsA("Sparkles") then
-                keepProp(inst, "Enabled") inst.Enabled = false
+            elseif rank >= 2 and LIGHT_CLASS[cn] then
+                setp(inst, "Enabled", false)
                 return true
-            elseif rank >= 2 and (inst:IsA("PointLight") or inst:IsA("SpotLight") or inst:IsA("SurfaceLight")) then
-                keepProp(inst, "Enabled") inst.Enabled = false
-                return true
-            elseif rank >= 2 and inst:IsA("Decal") then -- Decal + Texture
+            elseif rank >= 2 and (cn == "Decal" or cn == "Texture") then
                 if Boost.keep and isChar(inst) then return false end
-                keepProp(inst, "Transparency") inst.Transparency = 1
+                setp(inst, "Transparency", 1)
                 return true
-            elseif rank >= 2 and inst:IsA("SpecialMesh") then
+            elseif rank >= 2 and cn == "SpecialMesh" then
                 if Boost.keep and isChar(inst) then return false end
-                keepProp(inst, "TextureId") inst.TextureId = ""
+                setp(inst, "TextureId", "")
                 return true
-            elseif rank >= 2 and inst:IsA("SurfaceAppearance") then
+            elseif rank >= 2 and cn == "SurfaceAppearance" then
                 if Boost.keep and isChar(inst) then return false end
-                Boost.removed[#Boost.removed + 1] = {inst, inst.Parent}
-                inst.Parent = nil
+                local par = inst.Parent
+                if par then
+                    Boost.removed[#Boost.removed + 1] = {inst, par}
+                    inst.Parent = nil
+                end
                 return true
             end
             return false
         end
-        local function boostWorld(on, rank) -- pencahayaan, efek layar, air, kualitas grafik
+        local function boostWorld(on, rank) -- pencahayaan, air, kualitas grafik
             if on then
                 if not Boost.fx then
-                    Boost.fx = {shadows = Lighting.GlobalShadows, effects = {}}
+                    Boost.fx = {shadows = Lighting.GlobalShadows}
                     pcall(function() Boost.fx.quality = settings().Rendering.QualityLevel end)
                 end
                 local fx = Boost.fx
                 Lighting.GlobalShadows = false
-                for _, e in ipairs(Lighting:GetChildren()) do
-                    if e:IsA("PostEffect") and e.Enabled then fx.effects[#fx.effects + 1] = e e.Enabled = false end
-                end
                 pcall(function() settings().Rendering.QualityLevel = (rank >= 2) and Enum.QualityLevel.Level01 or Enum.QualityLevel.Level03 end)
                 if rank >= 2 then
                     local t = workspace.Terrain
@@ -5380,12 +5427,62 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                 local fx = Boost.fx
                 if not fx then return end
                 Lighting.GlobalShadows = fx.shadows
-                for _, e in ipairs(fx.effects) do pcall(function() e.Enabled = true end) end
                 if fx.quality then pcall(function() settings().Rendering.QualityLevel = fx.quality end) end
                 if fx.water then pcall(function() local t = workspace.Terrain t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance, t.WaterTransparency = fx.water[1], fx.water[2], fx.water[3], fx.water[4] end) end
                 if fx.deco ~= nil then pcall(function() sethiddenproperty(workspace.Terrain, "Decoration", fx.deco) end) end
                 Boost.fx = nil
             end
+        end
+        local function guardWorld() -- game kadang menyalakan lagi bayangan / efek layar (mis. setelah teleport atau ganti map)
+            if Lighting.GlobalShadows then Lighting.GlobalShadows = false end
+            for _, e in ipairs(Lighting:GetChildren()) do
+                if FX_CLASS[e.ClassName] and e.Enabled then setp(e, "Enabled", false) end
+            end
+        end
+        local function checkScanDone()
+            local m = Boost.scanMark
+            if m and Boost.done >= m then
+                Boost.scanMark = nil
+                notify("FPS Boost", Boost.count .. " objects optimized (" .. Boost.level .. ")", T.accent, 3)
+            end
+        end
+        local function drain() -- proses antrean dengan batas waktu per frame (dipanggil tiap Heartbeat)
+            if Boost.qh > Boost.qt then return end
+            local budget = (Boost.qt - Boost.qh > 6000) and (BUDGET * 2) or BUDGET -- antrean menumpuk (teleport jauh) -> sedikit lebih agresif
+            local t0, rank, n, h = os.clock(), Boost.rank, 0, Boost.qh
+            while h <= Boost.qt do
+                local d = Boost.q[h]
+                Boost.q[h] = nil
+                h = h + 1
+                n = n + 1
+                if d and d.Parent then
+                    local ok, ch = pcall(boostApply, d, rank)
+                    if ok and ch then Boost.count = Boost.count + 1 end
+                end
+                if n % 16 == 0 and os.clock() - t0 > budget then break end
+            end
+            Boost.done = Boost.done + n
+            if h > Boost.qt then Boost.qh, Boost.qt = 1, 0 else Boost.qh = h end
+            checkScanDone()
+        end
+        local function scanAll(my) -- masukkan semua objek yang sudah ada ke antrean (bertahap, tidak membekukan game)
+            Boost.count = 0
+            local function pushList(list)
+                for i = 1, #list do
+                    local n = Boost.qt + 1
+                    Boost.qt = n
+                    Boost.q[n] = list[i]
+                    if i % 4000 == 0 then
+                        task.wait()
+                        if Boost.tok ~= my then return false end
+                    end
+                end
+                return true
+            end
+            if not pushList(workspace:GetDescendants()) then return end
+            if not pushList(Lighting:GetDescendants()) then return end
+            Boost.scanMark = Boost.done + math.max(0, Boost.qt - Boost.qh + 1)
+            checkScanDone()
         end
         function Boost.enable()
             if Boost.on then return end
@@ -5393,40 +5490,53 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             Boost.tok = Boost.tok + 1
             local my = Boost.tok
             Boost.rank = rankOf(Boost.level)
+            Boost.q, Boost.qh, Boost.qt, Boost.done, Boost.count, Boost.scanMark = {}, 1, 0, 0, 0, nil
             task.spawn(function()
                 while Boost.restoring do task.wait() end
                 if Boost.tok ~= my then return end
-                local rank = Boost.rank
-                boostWorld(true, rank)
-                if Boost.conn then Boost.conn:Disconnect() end
-                Boost.conn = workspace.DescendantAdded:Connect(function(d) pcall(boostApply, d, Boost.rank) end) -- objek baru ikut dioptimalkan
-                local list, c = workspace:GetDescendants(), 0
-                for i = 1, #list do
-                    if Boost.tok ~= my then return end
-                    local ok, ch = pcall(boostApply, list[i], rank)
-                    if ok and ch then c = c + 1 end
-                    if i % 300 == 0 then task.wait() end -- bertahap supaya game tidak membeku
-                end
-                if Boost.tok == my then notify("FPS Boost", c .. " objects optimized (" .. Boost.level .. ")", T.accent, 3) end
+                boostWorld(true, Boost.rank)
+                for _, plr in ipairs(Players:GetPlayers()) do hookPlayer(plr) end -- cache karakter dulu, baru scan
+                local cs = Boost.conns
+                cs[#cs + 1] = Players.PlayerAdded:Connect(hookPlayer)
+                local function push(d) local n = Boost.qt + 1 Boost.qt = n Boost.q[n] = d end -- objek baru (streaming / teleport) -> antrean
+                cs[#cs + 1] = workspace.DescendantAdded:Connect(push)
+                cs[#cs + 1] = Lighting.DescendantAdded:Connect(push)
+                cs[#cs + 1] = RunService.Heartbeat:Connect(drain)
+                task.spawn(function() -- penjaga: bayangan / efek layar yang dinyalakan ulang game
+                    while Boost.on and Boost.tok == my do
+                        task.wait(1.5)
+                        if Boost.tok ~= my then break end
+                        pcall(guardWorld)
+                    end
+                end)
+                scanAll(my)
             end)
+        end
+        function Boost.rescan() -- scan ulang tanpa restore (murah): objek yang sudah beres dilewati
+            if not Boost.on or Boost.restoring then return end
+            local my = Boost.tok
+            task.spawn(function() scanAll(my) end)
         end
         function Boost.disable()
             if not Boost.on then return end
             Boost.on = false
             Boost.tok = Boost.tok + 1
-            if Boost.conn then Boost.conn:Disconnect() Boost.conn = nil end
+            for _, c in ipairs(Boost.conns) do pcall(function() c:Disconnect() end) end
+            Boost.conns = {}
+            Boost.q, Boost.qh, Boost.qt, Boost.scanMark = {}, 1, 0, nil
             Boost.restoring = true
             local list = {}
             for inst, props in pairs(Boost.orig) do list[#list + 1] = {inst, props} end
             local removed = Boost.removed
             Boost.orig, Boost.removed = setmetatable({}, {__mode = "k"}), {}
             task.spawn(function()
+                local t0 = os.clock()
                 for i, e in ipairs(list) do
                     local inst, props = e[1], e[2]
                     if inst.Parent then
-                        for k, v in pairs(props) do pcall(function() inst[k] = v end) end
+                        for k, v in pairs(props) do pcall(putp, inst, k, v) end
                     end
-                    if i % 300 == 0 then task.wait() end
+                    if i % 16 == 0 and os.clock() - t0 > 0.004 then task.wait() t0 = os.clock() end -- bertahap, tanpa lag
                 end
                 for _, e in ipairs(removed) do pcall(function() if e[2] and e[2].Parent then e[1].Parent = e[2] end end) end
                 boostWorld(false)
@@ -5448,7 +5558,13 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             Callback = function(v)
                 boostFlag = v and true or false
                 if booting then
-                    if v then task.delay(1.5, function() if boostFlag then Boost.enable() end end) end -- saat load: tunggu pilihan level & karakter terbaca dulu
+                    if v then -- saat load config (mis. setelah teleport): tunggu game selesai load + pilihan level & karakter terbaca dulu
+                        task.spawn(function()
+                            if not game:IsLoaded() then game.Loaded:Wait() end
+                            task.wait(1.5)
+                            if boostFlag then Boost.enable() end
+                        end)
+                    end
                     return
                 end
                 if v then Boost.enable() else Boost.disable() end
@@ -5458,7 +5574,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         bst:Toggle({Title = "Keep characters colored", Desc = "Players stay normal while the world turns gray", Flag = "BoostChars", Default = true,
             Callback = function(v) Boost.keep = v and true or false if not booting then Boost.reapply() end end})
         bst:Button({Title = "Re-scan world", Desc = "Optimize objects that loaded after boosting", Callback = function()
-            if Boost.on then Boost.reapply() else notify("FPS Boost", "Turn on FPS Boost first", T.warn, 2) end
+            if Boost.on then Boost.rescan() else notify("FPS Boost", "Turn on FPS Boost first", T.warn, 2) end
         end})
         gui.Destroying:Connect(function() if Boost.on then Boost.disable() end end)
 
