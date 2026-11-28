@@ -1,4 +1,4 @@
--- FIX: FPS Boost v4 (governor berdasar waktu frame asli: ON / OFF / scan tanpa fps loncat), toast didesain ulang, Dashboard selalu aktif.
+-- FIX: FPS Boost v5 (scan dari yang terdekat, status proses di toggle), Dashboard rank bertema kucing, tab Chatting terpisah, leaderboard & changelog dihapus.
 -- SPHINX UI 1.0.1
 --  [ + ] 12 fitur baru di Settings: Anti-AFK, Auto rejoin, Server hop, Streamer mode, Copy config (General); Animation speed + style (Appearance);
 --        Graphics quality, Unfocused FPS limit, Mute game, Fullbright, Field of view (Performance).
@@ -292,6 +292,8 @@ local ICONS = { -- ikon vektor 24x24 buatan sendiri: l/L garis (L = tebal), p ga
     sort = {{"l",8,4,8,20},{"p",4.5,7.5,8,4,11.5,7.5},{"l",16,4,16,20},{"p",12.5,16.5,16,20,19.5,16.5}},
     smile = {{"c",12,12,9.5},{"p",8,14.5,10,16.5,14,16.5,16,14.5},{"d",9,9.5,1.2},{"d",15,9.5,1.2}},
     dot = {{"d",12,12,3.4}},
+    paw = {{"d",5.6,11.2,2.2},{"d",9.5,6.5,2.4},{"d",14.5,6.5,2.4},{"d",18.4,11.2,2.2},{"d",12,16.2,4.2},{"d",8.6,18.2,2.9},{"d",15.4,18.2,2.9}},
+    cat = {{"p",4.5,4,9.2,7.6,14.8,7.6,19.5,4,20.5,12,18.2,18.2,12,20.8,5.8,18.2,3.5,12,4.5,4},{"d",8.8,12.6,1.15},{"d",15.2,12.6,1.15},{"d",12,15.4,0.9},{"l",1.5,14.2,5.2,14.8},{"l",1.5,17,5.2,16.2},{"l",22.5,14.2,18.8,14.8},{"l",22.5,17,18.8,16.2}},
     close = {{"l",5,5,19,19},{"l",19,5,5,19}},
     check = {{"p",4,12.5,9.5,18,20,6.5}},
     play = {{"p",7,4,19,12,7,20,7,4}},
@@ -2741,7 +2743,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             local v = F[flag]
             if type(v) ~= "boolean" then v = (o.Default == true) or (o.Value == true) end
             local f = boxRow(desc and 30 or 20, 8)
-            local tl = rowText(f, title, desc, 52)
+            local tl, dlab = rowText(f, title, desc, 52)
             local sw = new("Frame", {AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 0, 0.5, 0), Size = UDim2.fromOffset(34, 18), BackgroundColor3 = v and T.accent or T.off, BorderSizePixel = 0}, f)
             corner(sw, "full")
             local swSt = stroke(sw, v and T.accent or T.swLn, 1, 0)
@@ -2765,6 +2767,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             themeFns[#themeFns + 1] = function() sw.BackgroundColor3 = v and T.accent or T.off swSt.Color = v and T.accent or T.swLn knob.BackgroundColor3 = kcol(v) end
             function obj:Set(nv, fire) upd(nv and true or false, not fire) end
             function obj:Get() return v end
+            function obj:SetDesc(s) if dlab then dlab.Text = tostring(s) end end
             F[flag], Reg[flag] = v, obj
             if o.Callback then task.spawn(safe, o.Callback, v) end
             return obj
@@ -3378,7 +3381,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
 
     -- Window:Group({Title, Icon}) -> grup di sidebar (header + panah). G:Tab({Title, Icon, Subtitle}) -> halaman di bawah grup.
     -- Hasil Tab = pembuat komponen; K:SubTab({Title, Icon}) menambah chip di atas konten dan mengembalikan pembuat komponennya.
-    local buildDashboard
+    local buildDashboard, buildChat
     do
         local LP = Players.LocalPlayer
         local SF = CFG .. "/dashboard.json"
@@ -3393,7 +3396,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         local function saveStats() pcall(function() if writefile then writefile(SF, Http:JSONEncode(stats)) end end) end
         saveStats()
 
-        local LV = {"Newbie", "Rookie", "Regular", "Veteran", "Elite", "Master", "Legend"}
+        local LV = {"Kitten", "Stray", "Alley Cat", "Tomcat", "Panther", "Lion", "Sphinx"} -- tangga rank bertema kucing; level 7+ tetap "Sphinx"
         local function lvStart(n) return 50 * n * (n - 1) end -- Lv2 mulai 100 XP, Lv3 300 XP, Lv4 600 XP ...
         local function lvInfo()
             local xp = stats.exec * 10 + math.floor(stats.secs / 60)
@@ -3443,47 +3446,76 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                 return x + w + 6
             end
 
-            ---------------- BARIS 1: profil + level ----------------
-            local r1 = rowF(88)
-            local pc = card(r1, UDim2.new(0.6, -5, 1, 0))
-            local av = new("ImageLabel", {Position = UDim2.fromOffset(12, 10), Size = UDim2.fromOffset(44, 44), BackgroundColor3 = T.field, BorderSizePixel = 0,
+            ---------------- BARIS 1: profil + rank (tema kucing) ----------------
+            local r1 = rowF(112)
+            local pc = card(r1, UDim2.new(0.56, -5, 1, 0))
+            local function wmCol(k) return T.el:Lerp(T.accent, k) end -- warna watermark: nyaris menyatu dengan kartu
+            local wmPaw = mkIcon(pc, "paw", 92, wmCol(0.08), {AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -8, 1, -4), Rotation = -16})
+            for _, sx in ipairs({-1, 1}) do -- telinga kucing di atas avatar (belah ketupat aksen, separuh bawahnya tertutup avatar)
+                local ex = 40 + sx * 18.5
+                local ear = new("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(ex, 17.5), Size = UDim2.fromOffset(15, 15), Rotation = 45, BackgroundColor3 = T.accent, BorderSizePixel = 0, ZIndex = 2}, pc)
+                corner(ear, 3)
+                skin(ear, "BackgroundColor3", "accent")
+                local inner = new("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(ex, 19), Size = UDim2.fromOffset(7, 7), Rotation = 45, BackgroundColor3 = T.bg, BackgroundTransparency = 0.45, BorderSizePixel = 0, ZIndex = 2}, pc)
+                corner(inner, 2)
+            end
+            local av = new("ImageLabel", {Position = UDim2.fromOffset(14, 14), Size = UDim2.fromOffset(52, 52), BackgroundColor3 = T.field, BorderSizePixel = 0, ZIndex = 3,
                 Image = ("rbxthumb://type=AvatarHeadShot&id=%d&w=150&h=150"):format(LP.UserId)}, pc)
             corner(av, "full")
             skin(stroke(av, T.accent, 2, 0.2), "Color", "accent")
-            lb(pc, "WELCOME BACK", 66, 8, 120, 10, {W = 2, TextSize = 8, TextColor3 = T.faint})
-            lb(pc, LP.DisplayName, 66, 19, 110, 18, {W = 3, TextSize = 14})
-            do -- badge rank di samping nama: mahkota + permata (digambar dari Frame; emoji 👑🔮 tidak tampil di font ini -> "[]")
-                local bxr = 66 + math.min(textW(LP.DisplayName, 14), 108) + 8
-                mkIcon(pc, "crown", 14, T.warn, {Position = UDim2.fromOffset(bxr, 21)})
-                local gem = mkIcon(pc, "gem", 14, T.accentL, {Position = UDim2.fromOffset(bxr + 18, 21)})
-                themeFns[#themeFns + 1] = function() gem.tint(T.accentL, 0) end
+            lb(pc, "WELCOME BACK", 78, 12, 140, 10, {W = 2, TextSize = 8, TextColor3 = T.faint})
+            lb(pc, LP.DisplayName, 78, 24, 110, 18, {W = 3, TextSize = 14})
+            do -- badge di samping nama: mahkota (role) + jejak kaki kucing (digambar dari Frame; emoji tidak tampil di font ini)
+                local bxr = 78 + math.min(textW(LP.DisplayName, 14), 108) + 8
+                mkIcon(pc, "crown", 14, T.warn, {Position = UDim2.fromOffset(bxr, 26)})
+                local pw = mkIcon(pc, "paw", 13, T.accentL, {Position = UDim2.fromOffset(bxr + 19, 26)})
+                themeFns[#themeFns + 1] = function() pw.tint(T.accentL, 0) end
             end
-            lb(pc, "@" .. LP.Name, 66, 38, 150, 12, {W = 1, TextSize = 9, TextColor3 = T.faint})
-            local bx = pill(pc, tostring(C.Role or "OWNER"):upper(), T.warn, 12, 64)
-            bx = pill(pc, tostring(C.Version or "V1.0"), T.accent, bx, 64, true)
-            pill(pc, tostring(C.Plan or "Lifetime"), Color3.fromRGB(110, 118, 255), bx, 64)
+            lb(pc, "@" .. LP.Name, 78, 44, 150, 12, {W = 1, TextSize = 9, TextColor3 = T.faint})
+            local bx = pill(pc, tostring(C.Role or "OWNER"):upper(), T.warn, 14, 82)
+            bx = pill(pc, tostring(C.Version or "V1.0"), T.accent, bx, 82, true)
+            pill(pc, tostring(C.Plan or "Lifetime"), Color3.fromRGB(110, 118, 255), bx, 82)
 
-            local lc = card(r1, UDim2.new(0.4, -5, 1, 0), UDim2.new(0.6, 5, 0, 0))
-            mkIcon(lc, "rank", 26, T.warn, {Position = UDim2.fromOffset(12, 13)}) -- logo rank (glyph ≋ tidak ada di font -> "[]")
-            local lvTop = lb(lc, "", 46, 10, 110, 10, {W = 2, TextSize = 8, TextColor3 = T.faint})
-            local lvName = lb(lc, "", 46, 20, 110, 18, {W = 3, TextSize = 14})
-            local lvNext = lb(lc, "", 46, 39, 110, 12, {W = 1, TextSize = 9, TextColor3 = T.faint})
-            local track = new("Frame", {Position = UDim2.fromOffset(12, 62), Size = UDim2.new(1, -24, 0, 5), BackgroundColor3 = T.field, BorderSizePixel = 0}, lc)
+            -- kartu rank: lambang kepala kucing + badge level, nama rank, bar XP, tangga 7 jejak kaki (satu per rank)
+            local lc = card(r1, UDim2.new(0.44, -5, 1, 0), UDim2.new(0.56, 5, 0, 0))
+            local wmCat = mkIcon(lc, "cat", 72, wmCol(0.07), {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8), Rotation = 12})
+            local tile = new("Frame", {Position = UDim2.fromOffset(12, 10), Size = UDim2.fromOffset(44, 44), BackgroundTransparency = 0.8, BorderSizePixel = 0}, lc)
+            skin(tile, "BackgroundColor3", "accent")
+            corner(tile, 13)
+            skin(stroke(tile, T.accent, 1, 0.55), "Color", "accent")
+            local catIc = mkIcon(tile, "cat", 28, T.accentL, {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5)})
+            themeFns[#themeFns + 1] = function() catIc.tint(T.accentL, 0) end
+            local lvBadge = new("Frame", {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(52, 51), Size = UDim2.fromOffset(19, 19), BackgroundColor3 = T.bg, BorderSizePixel = 0}, lc)
+            corner(lvBadge, "full")
+            skin(stroke(lvBadge, T.accent, 1.2, 0.2), "Color", "accent")
+            local lvNum = text(lvBadge, {Text = "1", Size = UDim2.fromScale(1, 1), TextXAlignment = XC, W = 4, TextSize = 9, TextTruncate = NOTRUNC})
+            lb(lc, "RANK", 66, 11, 110, 10, {W = 2, TextSize = 8, TextColor3 = T.faint})
+            local rkName = lb(lc, "", 66, 22, UDim2.new(1, -78, 0, 20), nil, {W = 4, TextSize = 15, TextTruncate = NOTRUNC})
+            local rkLv = lb(lc, "", 66, 43, UDim2.new(1, -78, 0, 12), nil, {W = 1, TextSize = 9, TextColor3 = T.faint})
+            local track = new("Frame", {Position = UDim2.fromOffset(12, 66), Size = UDim2.new(1, -24, 0, 6), BackgroundColor3 = T.field, BorderSizePixel = 0}, lc)
             corner(track, "full")
             local fill = new("Frame", {Size = UDim2.fromScale(0, 1), BackgroundColor3 = WHITE, BorderSizePixel = 0}, track)
             corner(fill, "full")
             local fillG = new("UIGradient", {}, fill)
-            local lvL = lb(lc, "", 12, 71, 80, 11, {W = 1, TextSize = 8, TextColor3 = T.faint})
-            local lvR = lb(lc, "", 0, 71, UDim2.new(1, -12, 0, 11), nil, {W = 1, TextSize = 8, TextColor3 = T.faint, TextXAlignment = XR})
+            local lad = new("Frame", {Position = UDim2.fromOffset(18, 80), Size = UDim2.new(1, -36, 0, 12), BackgroundTransparency = 1, BorderSizePixel = 0}, lc)
+            local paws = {}
+            for i = 1, #LV do
+                paws[i] = mkIcon(lad, "paw", 11, T.faint, {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale((i - 1) / (#LV - 1), 0.5)})
+            end
+            local lvL = lb(lc, "", 12, 96, 110, 11, {W = 1, TextSize = 8, TextColor3 = T.faint})
+            local lvR = lb(lc, "", 0, 96, UDim2.new(1, -12, 0, 11), nil, {W = 1, TextSize = 8, TextColor3 = T.faint, TextXAlignment = XR})
             local function updLevel()
                 local xp, lv = lvInfo()
                 local lo, hi = lvStart(lv), lvStart(lv + 1)
-                lvTop.Text = "LEVEL " .. lv
-                lvName.Text = LV[math.min(lv, #LV)]
-                lvNext.Text = "Next: " .. LV[math.min(lv + 1, #LV)]
-                lvL.Text = xp .. " XP"
-                lvR.Text = hi .. " XP · Lv " .. (lv + 1)
+                local ri = math.min(lv, #LV)
+                rkName.Text = LV[ri]
+                rkLv.Text = "Level " .. lv
+                lvNum.Text = tostring(lv)
+                lvL.Text = (lv < #LV) and ("Next: " .. LV[lv + 1]) or ("Next: Level " .. (lv + 1))
+                lvR.Text = xp .. " / " .. hi .. " XP"
                 fill.Size = UDim2.fromScale(math.clamp((xp - lo) / (hi - lo), 0.03, 1), 1)
+                local dimC = T.outline:Lerp(T.faint, 0.45)
+                for i = 1, #LV do paws[i].tint(i == ri and WHITE or (i < ri and T.accentL or dimC), 0) end -- rank sekarang putih, yang sudah dilewati aksen
             end
 
             ---------------- BARIS 2: executions + time spent ----------------
@@ -3792,155 +3824,59 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                 end)
             end
 
-            ---------------- BARIS 5: community (leaderboard / changelogs) ----------------
-            local cm = new("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = T.el, BorderSizePixel = 0, LayoutOrder = nextO()}, root)
-            corner(cm, 10)
-            stroke(cm, T.outline, 1, 0.4)
-            new("UIPadding", {PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10), PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10)}, cm)
-            new("UIListLayout", {Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder}, cm)
-            local hd = new("Frame", {Size = UDim2.new(1, 0, 0, 26), BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = 1}, cm)
-            chip(hd, "user", 0, 2)
-            lb(hd, "Community", 30, 0, 100, 26, {W = 3, TextSize = 12})
-            local tg = new("Frame", {AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.fromScale(1, 0.5), Size = UDim2.fromOffset(250, 24), BackgroundColor3 = T.field, BorderSizePixel = 0}, hd)
-            corner(tg, 8)
-            local function listF(o, vis) -- wadah daftar yang tingginya mengikuti isi
-                local f = new("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = o, Visible = vis}, cm)
-                new("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, f)
+            -- Papan peringkat & changelog sudah dihapus. Fungsi lama dibiarkan kosong supaya script yang masih memanggilnya tidak error.
+            function Window:SetLeaderboard() end
+            function Window:SetChangelogs() end
+
+            ---------------- isi awal + pembaruan berkala ----------------
+            local function paintFill() fillG.Color = ColorSequence.new(T.accent2, T.accentL) end
+            paintFill()
+            themeFns[#themeFns + 1] = function() paintFill() wmPaw.tint(wmCol(0.08), 0) wmCat.tint(wmCol(0.07), 0) updLevel() end
+            exN.Text = tostring(stats.exec)
+            plN.Text = tostring(#Players:GetPlayers())
+            infoV[3].Text = os.date("%H:%M:%S")
+            updLevel()
+            updTime()
+            task.spawn(function()
+                local n = 0
+                while gui.Parent do
+                    task.wait(1)
+                    n = n + 1
+                    stats.secs = stats.secs + 1
+                    updTime()
+                    infoV[3].Text = os.date("%H:%M:%S")
+                    if n % 5 == 0 then plN.Text = tostring(#Players:GetPlayers()) end
+                    if n % 10 == 0 then
+                        updLevel()
+                    end
+                    if n % 15 == 0 then saveStats() end
+                end
+                saveStats()
+            end)
+        end
+        buildChat = function(p) -- isi tab "Chatting" (tab sendiri di bawah Dashboard)
+            local root = p.dL
+            local function lb(parent, txt, x, y, w, h, o) -- label kecil; w boleh UDim2
+                o = o or {}
+                o.Text, o.Position = txt, UDim2.fromOffset(x, y)
+                o.Size = (typeof(w) == "UDim2") and w or UDim2.fromOffset(w, h)
+                return text(parent, o)
+            end
+            local function card(parent, size, pos)
+                local f = new("Frame", {Size = size, Position = pos or UDim2.new(), BackgroundColor3 = WHITE, BorderSizePixel = 0}, parent)
+                corner(f, 12)
+                stroke(f, T.outline, 1, 0.9)
+                new("UIGradient", {Rotation = 90, Color = ColorSequence.new(T.el:Lerp(WHITE, 0.035), T.el:Lerp(T.bg, 0.3))}, f)
                 return f
             end
-            local views, tabs = {lb = listF(2, true), log = listF(3, false), chat = listF(4, false)}, {}
-            local onShow = {}
-            local showView
-            local function mkTab(k, txt, x, w)
-                local b = new("TextButton", {Position = UDim2.fromOffset(x, 2), Size = UDim2.fromOffset(w or 82, 20), BackgroundTransparency = 1, AutoButtonColor = false, Text = "", BorderSizePixel = 0}, tg)
+            local function chip(parent, glyph, x, y) -- kotak ikon tipis
+                local b = new("Frame", {Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(22, 22), BackgroundTransparency = 0.82, BorderSizePixel = 0}, parent)
                 skin(b, "BackgroundColor3", "accent")
-                corner(b, 6)
-                local st = skin(stroke(b, T.accent, 1, 1), "Color", "accent")
-                local l = text(b, {Text = txt, Size = UDim2.fromScale(1, 1), TextXAlignment = XC, W = 3, TextSize = 10, TextColor3 = T.mid, TextTruncate = NOTRUNC})
-                tabs[k] = {b, l, st}
-                b.MouseButton1Click:Connect(function() showView(k) end)
-            end
-            mkTab("lb", "Papan Peringkat", 2, 90)
-            mkTab("log", "Changelogs", 94, 76)
-            mkTab("chat", "Chatting", 172, 76)
-            showView = function(k)
-                for key, t in pairs(tabs) do
-                    local on = key == k
-                    play(t[1], {BackgroundTransparency = on and 0.78 or 1}, 0.15)
-                    play(t[2], {TextColor3 = on and T.text or T.mid}, 0.15)
-                    play(t[3], {Transparency = on and 0.45 or 1}, 0.15)
-                    views[key].Visible = on
-                end
-                if onShow[k] then task.spawn(onShow[k]) end
-            end
-
-            -- toolbar: search + pager
-            local bar = new("Frame", {Size = UDim2.new(1, 0, 0, 26), BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = 1}, views.lb)
-            local sf = new("Frame", {Size = UDim2.new(1, -86, 1, 0), BackgroundColor3 = T.field, BorderSizePixel = 0}, bar)
-            corner(sf, 7)
-            mkIcon(sf, "search", 12, T.faint, {AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 9, 0.5, 0)})
-            local sb = new("TextBox", {Position = UDim2.fromOffset(28, 0), Size = UDim2.new(1, -34, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", PlaceholderText = "Search player...",
-                PlaceholderColor3 = T.faint, TextColor3 = T.text, FontFace = FONT[2], TextSize = 10, TextXAlignment = XL, ClearTextOnFocus = false}, sf)
-            local pg = new("Frame", {AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.fromOffset(78, 26), BackgroundTransparency = 1, BorderSizePixel = 0}, bar)
-            local function pbtn(txt, x)
-                local b = new("TextButton", {Position = UDim2.fromOffset(x, 2), Size = UDim2.fromOffset(22, 22), BackgroundColor3 = T.field, AutoButtonColor = false, Text = txt, FontFace = FONT[3], TextSize = 12, TextColor3 = T.mid, BorderSizePixel = 0}, pg)
-                corner(b, 6)
+                corner(b, "full")
+                local ic = mkIcon(b, glyph, 11, T.accentL, {AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5)})
+                themeFns[#themeFns + 1] = function() ic.tint(T.accentL, 0) end
                 return b
             end
-            local pPrev, pNext = pbtn("<", 0), pbtn(">", 56)
-            local pLbl = text(pg, {Text = "1/1", Position = UDim2.fromOffset(22, 0), Size = UDim2.fromOffset(34, 26), TextXAlignment = XC, W = 2, TextSize = 10, TextColor3 = T.mid, TextTruncate = NOTRUNC})
-            -- header kolom
-            local hdr = new("Frame", {Size = UDim2.new(1, 0, 0, 14), BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = 2}, views.lb)
-            local usersL = lb(hdr, "Users 0", 6, 0, 100, 14, {W = 2, TextSize = 9, TextColor3 = T.faint})
-            local function hcol(txt, x, w, al) text(hdr, {Text = txt, Position = UDim2.fromScale(x, 0), Size = UDim2.fromScale(w, 1), TextXAlignment = al, W = 2, TextSize = 9, TextColor3 = T.faint, TextTruncate = NOTRUNC}) end
-            hcol("Score", 0.44, 0.18, XL)
-            hcol("Executed", 0.64, 0.14, XC)
-            hcol("Time", 0.8, 0.185, XR)
-            local rowsF = new("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = 3}, views.lb)
-            new("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}, rowsF)
-
-            local lbData = (type(C.Leaderboard) == "table") and C.Leaderboard or {}
-            local logs = (type(C.Changelogs) == "table") and C.Changelogs or {{Version = tostring(C.Version or "V1.0"), Date = os.date("%Y-%m-%d"), Items = {"Initial release"}}}
-            local page, PAGE = 1, 10
-            local function entries()
-                local list, hasMe = {}, false
-                for _, e in ipairs(lbData) do
-                    local c = {Name = tostring(e.Name or "?"), UserId = tonumber(e.UserId), Score = tonumber(e.Score) or 0, Executed = tonumber(e.Executed) or 0,
-                        Time = tonumber(e.Time) or 0, Level = tonumber(e.Level) or 1, Crown = e.Crown == true}
-                    if (c.UserId and c.UserId == LP.UserId) or c.Name == LP.Name then c.Me, hasMe = true, true end
-                    list[#list + 1] = c
-                end
-                if not hasMe then
-                    local xp, lv = lvInfo()
-                    list[#list + 1] = {Name = LP.DisplayName, UserId = LP.UserId, Score = xp, Executed = stats.exec, Time = stats.secs, Level = lv, Me = true,
-                        Crown = tostring(C.Role or "OWNER"):upper() == "OWNER"}
-                end
-                table.sort(list, function(a, b) return a.Score > b.Score end)
-                for i, e in ipairs(list) do e.Rank = i end
-                return list
-            end
-            local medals = {Color3.fromRGB(255, 196, 61), Color3.fromRGB(190, 196, 215), Color3.fromRGB(235, 130, 70)}
-            local function refreshLB()
-                local q, all, list = sb.Text:lower(), entries(), {}
-                for _, e in ipairs(all) do if q == "" or e.Name:lower():find(q, 1, true) then list[#list + 1] = e end end
-                local pages = math.max(1, math.ceil(#list / PAGE))
-                page = math.clamp(page, 1, pages)
-                usersL.Text = "Users " .. #all
-                pLbl.Text = page .. "/" .. pages
-                for _, c in ipairs(rowsF:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
-                local top = (all[1] and all[1].Score > 0) and all[1].Score or 1
-                for i = (page - 1) * PAGE + 1, math.min(page * PAGE, #list) do
-                    local e = list[i]
-                    local r = new("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = e.Me and T.accent or T.field, BackgroundTransparency = e.Me and 0.82 or 0, BorderSizePixel = 0, LayoutOrder = i}, rowsF)
-                    corner(r, 8)
-                    if e.Me then stroke(r, T.accent, 1, 0.55) end
-                    local medal = medals[e.Rank]
-                    local rk = new("Frame", {Position = UDim2.fromOffset(6, 5), Size = UDim2.fromOffset(24, 24), BackgroundColor3 = medal or T.bg, BackgroundTransparency = medal and 0.8 or 0.2, BorderSizePixel = 0}, r)
-                    corner(rk, 7)
-                    text(rk, {Text = tostring(e.Rank), Size = UDim2.fromScale(1, 1), TextXAlignment = XC, W = 4, TextSize = 10, TextColor3 = medal or T.faint, TextTruncate = NOTRUNC})
-                    local a = new("ImageLabel", {Position = UDim2.fromOffset(36, 5), Size = UDim2.fromOffset(24, 24), BackgroundColor3 = T.outline, BorderSizePixel = 0,
-                        Image = e.UserId and ("rbxthumb://type=AvatarHeadShot&id=%d&w=60&h=60"):format(e.UserId) or ""}, r)
-                    corner(a, "full")
-                    if e.Crown then mkIcon(r, "crown", 11, T.warn, {Position = UDim2.fromOffset(49, 0), ZIndex = 5}) end -- mahkota di pojok avatar (bukan emoji)
-                    text(r, {Text = e.Name, Position = UDim2.fromOffset(66, 3), Size = UDim2.new(0.42, -66, 0, 16), W = 3, TextSize = 11})
-                    text(r, {Text = (e.Me and "You · " or "") .. "Rank #" .. e.Rank .. " · Lv " .. e.Level, Position = UDim2.fromOffset(66, 18), Size = UDim2.new(0.42, -66, 0, 12), W = 1, TextSize = 8,
-                        TextColor3 = e.Me and T.accentL or T.faint})
-                    local tr = new("Frame", {Position = UDim2.new(0.44, 0, 0.5, -2), Size = UDim2.new(0.18, 0, 0, 4), BackgroundColor3 = T.outline, BorderSizePixel = 0}, r)
-                    corner(tr, "full")
-                    local fl = new("Frame", {Size = UDim2.fromScale(math.clamp(e.Score / top, 0.04, 1), 1), BackgroundColor3 = WHITE, BorderSizePixel = 0}, tr)
-                    corner(fl, "full")
-                    new("UIGradient", {Color = ColorSequence.new(T.accent2, T.accentL)}, fl)
-                    text(r, {Text = tostring(e.Executed), Position = UDim2.fromScale(0.64, 0), Size = UDim2.fromScale(0.14, 1), TextXAlignment = XC, W = 3, TextSize = 10, TextTruncate = NOTRUNC})
-                    text(r, {Text = fmtT(e.Time), Position = UDim2.fromScale(0.8, 0), Size = UDim2.fromScale(0.185, 1), TextXAlignment = XR, W = 2, TextSize = 10, TextColor3 = T.mid, TextTruncate = NOTRUNC})
-                end
-            end
-            pPrev.MouseButton1Click:Connect(function() page = page - 1 refreshLB() end)
-            pNext.MouseButton1Click:Connect(function() page = page + 1 refreshLB() end)
-            sb:GetPropertyChangedSignal("Text"):Connect(function() page = 1 refreshLB() end)
-
-            local function refreshLog()
-                for _, c in ipairs(views.log:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
-                if #logs == 0 then
-                    local f = new("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = T.field, BorderSizePixel = 0, LayoutOrder = 1}, views.log)
-                    corner(f, 8)
-                    text(f, {Text = "No changelogs yet.", Size = UDim2.fromScale(1, 1), TextXAlignment = XC, W = 1, TextSize = 10, TextColor3 = T.faint})
-                end
-                for i, e in ipairs(logs) do
-                    local f = new("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = T.field, BorderSizePixel = 0, LayoutOrder = i}, views.log)
-                    corner(f, 8)
-                    new("UIPadding", {PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 9), PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10)}, f)
-                    new("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}, f)
-                    local top = new("Frame", {Size = UDim2.new(1, 0, 0, 18), BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = 1}, f)
-                    pill(top, tostring(e.Version or "V?"), T.accent, 0, 0, true)
-                    text(top, {Text = tostring(e.Date or ""), Size = UDim2.fromScale(1, 1), TextXAlignment = XR, W = 1, TextSize = 9, TextColor3 = T.faint})
-                    local items = {}
-                    for _, it in ipairs(e.Items or {}) do items[#items + 1] = "• " .. tostring(it) end
-                    text(f, {Text = table.concat(items, "\n"), Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top,
-                        W = 1, TextSize = 10, TextColor3 = T.mid, TextTruncate = NOTRUNC, LayoutOrder = 2})
-                end
-            end
-            function Window:SetLeaderboard(list) lbData = (type(list) == "table") and list or {} refreshLB() end
-            function Window:SetChangelogs(list) logs = (type(list) == "table") and list or {} refreshLog() end
 
             ---------------- CHAT (Firebase Realtime Database, tanpa batas karakter) ----------------
             -- Setup 1x: console.firebase.google.com > buat project > Build > Realtime Database > Create > Rules jadi
@@ -3949,23 +3885,39 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                 local NAME = LP.DisplayName -- hanya display name. Mau username? ganti jadi LP.Name
                 local base = (tostring(C.ChatUrl or CHAT_URL or ""):gsub("/+$", ""))
                 local httpReq = (syn and syn.request) or (http and http.request) or http_request or request or (fluxus and fluxus.request)
-                local cv = views.chat
+                local cv = root
                 local msgCol = Color3.fromRGB(214, 214, 224)
 
-                new("Frame", {Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = T.outline, BackgroundTransparency = 0.4, BorderSizePixel = 0, LayoutOrder = 1}, cv)
-                local ch = new("Frame", {Size = UDim2.new(1, 0, 0, 14), BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = 2}, cv)
-                lb(ch, "Global chat", 6, 0, 120, 14, {W = 2, TextSize = 9, TextColor3 = T.faint})
-                local onl = text(ch, {Text = "0 online", Size = UDim2.new(1, -6, 1, 0), TextXAlignment = XR, W = 2, TextSize = 9, TextColor3 = T.faint, TextTruncate = NOTRUNC})
+                -- kepala: judul + status online
+                local head = card(cv, UDim2.new(1, 0, 0, 46))
+                head.LayoutOrder = 1
+                chip(head, "message", 12, 12)
+                lb(head, "Global chat", 42, 8, 160, 16, {W = 3, TextSize = 12})
+                lb(head, "Talk with other users", 42, 25, 200, 12, {W = 1, TextSize = 9, TextColor3 = T.faint})
+                local opill = new("Frame", {AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0), Size = UDim2.fromOffset(88, 22), BackgroundColor3 = T.field, BorderSizePixel = 0}, head)
+                corner(opill, "full")
+                local onlDot = new("Frame", {AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 9, 0.5, 0), Size = UDim2.fromOffset(6, 6), BackgroundColor3 = T.ok, BorderSizePixel = 0}, opill)
+                corner(onlDot, "full")
+                local onl = text(opill, {Text = "0 online", Position = UDim2.fromOffset(21, 0), Size = UDim2.new(1, -25, 1, 0), W = 3, TextSize = 9, TextColor3 = T.mid, TextTruncate = NOTRUNC})
 
-                local area = new("Frame", {Size = UDim2.new(1, 0, 0, 250), BackgroundColor3 = T.field, BackgroundTransparency = 0.55, BorderSizePixel = 0, ClipsDescendants = true, LayoutOrder = 3}, cv)
-                corner(area, 8)
+                local area = new("Frame", {Size = UDim2.new(1, 0, 0, 300), BackgroundColor3 = T.field, BackgroundTransparency = 0.45, BorderSizePixel = 0, ClipsDescendants = true, LayoutOrder = 3}, cv)
+                corner(area, 12)
+                stroke(area, T.outline, 1, 0.9)
+                local function fit() -- tinggi area pesan mengikuti tinggi halaman
+                    local h = p.frame.AbsoluteSize.Y
+                    if h > 0 then area.Size = UDim2.new(1, 0, 0, math.clamp(h - 185, 180, 560)) end
+                end
+                fit()
+                p.frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
                 local scr = new("ScrollingFrame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 2, CanvasSize = UDim2.new(),
                     AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y}, area)
                 skin(scr, "ScrollBarImageColor3", "accent")
                 new("UIListLayout", {Padding = UDim.new(0, 1), SortOrder = Enum.SortOrder.LayoutOrder}, scr)
                 new("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4)}, scr)
-                local note = text(area, {Text = "", Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -24, 1, 0), TextXAlignment = XC, TextWrapped = true, W = 1, TextSize = 10,
+                local note = text(area, {Text = "", Position = UDim2.new(0, 12, 0.5, 14), Size = UDim2.new(1, -24, 0, 44), TextXAlignment = XC, TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, W = 1, TextSize = 10,
                     TextColor3 = T.faint, TextTruncate = NOTRUNC})
+                local pawE = mkIcon(area, "paw", 30, T.outline:Lerp(T.faint, 0.35), {AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 0.5, 8)})
+                themeFns[#themeFns + 1] = function() pawE.tint(T.outline:Lerp(T.faint, 0.35), 0) end
 
                 -- input
                 local tray = new("Frame", {Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false, LayoutOrder = 4}, cv)
@@ -4052,6 +4004,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                     elseif #msgs == 0 then note.Text = "Belum ada pesan. Jadi yang pertama!"
                     end
                     note.Visible = #msgs == 0
+                    pawE.inst.Visible = note.Visible
                 end
                 local function push(list) -- list sudah urut dari lama ke baru
                     local near = scr.CanvasPosition.Y + scr.AbsoluteWindowSize.Y >= scr.AbsoluteCanvasSize.Y - 30
@@ -4066,7 +4019,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                     if near then task.spawn(toBottom) end
                 end
                 local function setStatus(ok)
-                    onl.TextColor3 = ok and T.faint or T.bad
+                    onlDot.BackgroundColor3 = ok and T.ok or T.bad
                     onl.Text = ok and (onlineN .. " online") or "offline"
                 end
 
@@ -4119,7 +4072,9 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                 sendB.MouseButton1Click:Connect(send)
                 box.FocusLost:Connect(function(enter) if enter then send() task.defer(function() box:CaptureFocus() end) end end)
 
-                onShow.chat = function() task.spawn(countOn) poll() toBottom() end
+                p.frame:GetPropertyChangedSignal("Visible"):Connect(function() -- tab Chatting dibuka: segarkan online + pesan, lompat ke bawah
+                    if p.frame.Visible then task.spawn(function() task.spawn(countOn) poll() toBottom() end) end
+                end)
                 themeFns[#themeFns + 1] = rebuild
                 refreshNote()
                 if base ~= "" and httpReq then
@@ -4127,7 +4082,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                         local n = 0
                         while gui.Parent do
                             if n % 20 == 0 then task.spawn(beat) end
-                            if p.frame.Visible and cv.Visible then
+                            if p.frame.Visible then
                                 if n % 2 == 0 then task.spawn(poll) end
                                 if n % 10 == 0 then task.spawn(countOn) end
                             end
@@ -4138,36 +4093,6 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                     end)
                 end
             end
-
-            ---------------- isi awal + pembaruan berkala ----------------
-            local function paintFill() fillG.Color = ColorSequence.new(T.accent2, T.accentL) end
-            paintFill()
-            themeFns[#themeFns + 1] = function() paintFill() refreshLB() refreshLog() end
-            showView("lb")
-            exN.Text = tostring(stats.exec)
-            plN.Text = tostring(#Players:GetPlayers())
-            infoV[3].Text = os.date("%H:%M:%S")
-            updLevel()
-            updTime()
-            refreshLB()
-            refreshLog()
-            task.spawn(function()
-                local n = 0
-                while gui.Parent do
-                    task.wait(1)
-                    n = n + 1
-                    stats.secs = stats.secs + 1
-                    updTime()
-                    infoV[3].Text = os.date("%H:%M:%S")
-                    if n % 5 == 0 then plN.Text = tostring(#Players:GetPlayers()) end
-                    if n % 10 == 0 then
-                        updLevel()
-                        if p.frame.Visible and views.lb.Visible then refreshLB() end
-                    end
-                    if n % 15 == 0 then saveStats() end
-                end
-                saveStats()
-            end)
         end
     end
 
@@ -4177,9 +4102,10 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         local title = tostring(c.Title or c.Name or "Tab")
         local dash = title:lower() == "dashboard"
         if dash and Window.Dashboard then return Window.Dashboard end -- sudah ada otomatis, jangan dobel
-        local p = createPage(gname, title, c.Icon, dash and "Overview, leaderboard and changelogs" or (c.Subtitle or c.Desc), dash and 1 or c.Columns)
+        local p = createPage(gname, title, c.Icon, dash and "Your stats, rank and performance" or (c.Subtitle or c.Desc), dash and 1 or c.Columns)
         Window.Tabs[p.key] = p
         if dash then buildDashboard(p) end
+        if c.Chat then buildChat(p) end
         if cur == nil or dash then go(p.key) end
         return p.K
     end
@@ -4244,6 +4170,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
     do
         local dg = Window:Group({Title = dashGroup, Icon = "grid"})
         Window.Dashboard = dg:Tab({Title = "Dashboard", Icon = "grid"})
+        Window.Chat = dg:Tab({Title = "Chatting", Icon = "message", Subtitle = "Talk with other users", Columns = 1, Chat = true}) -- tab sendiri, tepat di bawah Dashboard
     end
 
     ------------------------------------------------------------------
@@ -5308,7 +5235,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         local Boost = {on = false, level = "Ultra", keep = true, tok = 0, restoring = false, rank = 3,
             op = newWeak(), og = newWeak(), ot = newWeak(), removed = {}, -- op: nilai asli part (angka) | og: Enabled / Transparency asli | ot: tekstur asli (string)
             q = {}, qh = 1, qt = 0, count = 0, conns = {}, scan = nil, chars = newWeak(),
-            gov = {n = 30, max = 450, base = 1 / 60, cool = 0, used = 0}}
+            gov = {n = 30, max = 450, base = 1 / 60, cool = 0, used = 0}, status = function() end}
         local GRAY = Color3.fromRGB(163, 165, 172)
         local SMOOTH = Enum.Material.SmoothPlastic
         local TCAP = 0.006 -- batas waktu Lua per frame (pengaman tambahan di luar governor)
@@ -5552,6 +5479,16 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             if fx.deco ~= nil then pcall(function() sethiddenproperty(workspace.Terrain, "Decoration", fx.deco) end) end
             Boost.fx = nil
         end
+        local function pruneRemoved() -- SurfaceAppearance yang induknya sudah hilang (streaming) dibuang dari daftar restore
+            local rem = Boost.removed
+            if #rem < 2000 then return end
+            local keep = {}
+            for i = 1, #rem do
+                local e = rem[i]
+                if e[2] and e[2].Parent then keep[#keep + 1] = e end
+            end
+            Boost.removed = keep
+        end
         local function guardWorld() -- game kadang menyalakan lagi bayangan / efek layar (mis. setelah teleport atau ganti map)
             if Lighting.GlobalShadows then Lighting.GlobalShadows = false end
             for _, e in ipairs(Lighting:GetChildren()) do
@@ -5563,15 +5500,35 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         end
 
         -- SCAN AWAL: DFS dengan tumpukan frame { list, i, lv }, dikerjakan bertahap mengikuti jatah governor
+        local function posOf(c)
+            if c:IsA("BasePart") then return c.Position end
+            if c:IsA("Model") then return c:GetPivot().Position end
+        end
+        local function sortNear(list, lv) -- yang terdekat dari kamera dikerjakan lebih dulu (daftar kecil saja, supaya tidak hitch)
+            local n = #list
+            if n < 2 or n > 800 or lv > 3 then return end
+            local cam = workspace.CurrentCamera
+            if not cam then return end
+            local o = cam.CFrame.Position
+            local dist = {}
+            for i = 1, n do
+                local ok, pos = pcall(posOf, list[i])
+                dist[list[i]] = (ok and pos) and (pos - o).Magnitude or 1e9
+            end
+            table.sort(list, function(a, b) return dist[a] < dist[b] end)
+        end
         local function startScan(manual)
             Boost.count = 0
-            Boost.scan = {manual = manual, stack = {
+            local wsKids = workspace:GetChildren()
+            sortNear(wsKids, 1)
+            Boost.scan = {manual = manual, ui = 0, stack = {
                 {list = Lighting:GetChildren(), i = 1, lv = EXPAND + 1},
-                {list = workspace:GetChildren(), i = 1, lv = 1},
+                {list = wsKids, i = 1, lv = 1},
             }}
         end
         local function finishScan(s)
             Boost.scan = nil
+            Boost.status()
             local msg
             if s.manual then
                 msg = (Boost.count > 0) and ("+" .. kfmt(Boost.count) .. " objects") or "Nothing new"
@@ -5595,7 +5552,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                     if lv ~= LEAF then
                         if lv <= EXPAND then
                             local ok, ch = pcall(c.GetChildren, c)
-                            if ok and #ch > 0 then st[#st + 1] = {list = ch, i = 1, lv = lv + 1} end
+                            if ok and #ch > 0 then sortNear(ch, lv + 1) st[#st + 1] = {list = ch, i = 1, lv = lv + 1} end
                         else
                             local ok, ds = pcall(c.GetDescendants, c)
                             if ok and #ds > 0 then st[#st + 1] = {list = ds, i = 1, lv = LEAF} end
@@ -5641,7 +5598,12 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             if s and Boost.scan == s and G.used < cap and os.clock() - t0 < TCAP then
                 local used, done = scanStep(s, rank, t0, G.used, cap)
                 G.used = used
-                if done then finishScan(s) end
+                if done then
+                    finishScan(s)
+                elseif t0 - s.ui > 0.6 then -- status di deskripsi toggle (tanpa toast)
+                    s.ui = t0
+                    Boost.status("Optimizing... " .. kfmt(Boost.count))
+                end
             end
         end
 
@@ -5665,13 +5627,17 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                 cs[#cs + 1] = RunService.Heartbeat:Connect(function(dt) govTick(dt) drain() end)
                 task.spawn(function() worldOn(my, Boost.rank) end)
                 task.spawn(function() -- penjaga: bayangan / efek layar yang dinyalakan ulang game
+                    local tick = 0
                     while Boost.on and Boost.tok == my do
                         task.wait(1.5)
                         if Boost.tok ~= my then break end
                         pcall(guardWorld)
+                        tick = tick + 1
+                        if tick % 20 == 0 then pcall(pruneRemoved) end
                     end
                 end)
                 startScan(false)
+                Boost.status("Optimizing...")
             end)
         end
         function Boost.rescan() -- scan ulang tanpa restore: yang sudah beres cuma dibaca, tidak ditulis
@@ -5707,6 +5673,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
             Boost.conns = {}
             Boost.q, Boost.qh, Boost.qt, Boost.scan = {}, 1, 0, nil
             Boost.restoring = true
+            Boost.status("Restoring...")
             local op, og, ot, removed, rank = Boost.op, Boost.og, Boost.ot, Boost.removed, Boost.rank
             Boost.op, Boost.og, Boost.ot, Boost.removed = newWeak(), newWeak(), newWeak(), {}
             local G = Boost.gov
@@ -5729,6 +5696,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                 end)
                 worldOff()
                 Boost.restoring = false
+                Boost.status()
                 notify("FPS Boost", "Off", T.accent, 1.8, "zap")
             end)
         end
@@ -5742,7 +5710,8 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
         end
         local bst = pf:Accordion({Title = "FPS Boost", Icon = "zap", Column = 2})
         local boostFlag = false
-        bst:Toggle({Title = "FPS Boost", Desc = "Flat gray world, no effects. Characters stay colored", Flag = "FpsBoost", Default = false,
+        local BOOST_IDLE = "Flat gray world, no effects. Characters stay colored"
+        local boostTg = bst:Toggle({Title = "FPS Boost", Desc = BOOST_IDLE, Flag = "FpsBoost", Default = false,
             Callback = function(v)
                 boostFlag = v and true or false
                 if booting then
@@ -5757,6 +5726,7 @@ local dragLogo = new("Frame", {Name = "LogoArea", Size = UDim2.new(0, SIDE_W - 1
                 end
                 if v then Boost.enable() else Boost.disable() end
             end})
+        Boost.status = function(msg) pcall(function() boostTg:SetDesc(msg or BOOST_IDLE) end) end -- progres tampil di deskripsi toggle
         bst:Dropdown({Title = "Boost level", Desc = "Light = effects off, Medium = no textures, Ultra = gray potato", Flag = "BoostLevel", Options = {"Light", "Medium", "Ultra"}, Default = "Ultra",
             Callback = function(v) Boost.level = v if not booting then Boost.reapply() end end})
         bst:Toggle({Title = "Keep characters colored", Desc = "Players stay normal while the world turns gray", Flag = "BoostChars", Default = true,
